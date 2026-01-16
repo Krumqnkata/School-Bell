@@ -11,7 +11,7 @@ import csv
 
 # --- App Conf ---
 APP_NAME = "Училищен Звънец v2.4"
-WIDTH = 900
+WIDTH = 1100
 HEIGHT = 700
 RESOURCES_DIR = "songs"
 SCHEDULE_FILE = "schedule.csv"
@@ -214,8 +214,8 @@ class SchoolBellApp(customtkinter.CTk):
             os.makedirs(RESOURCES_DIR)
 
         self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=3)
-        self.grid_columnconfigure(2, weight=2)
+        self.grid_columnconfigure(1, weight=2)
+        self.grid_columnconfigure(2, weight=3)
         self.grid_rowconfigure(0, weight=1)
 
         self.setup_left_panel()
