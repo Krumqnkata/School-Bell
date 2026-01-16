@@ -14,7 +14,7 @@ class ScheduleEditorWindow(customtkinter.CTkToplevel):
         self.parent_app = parent_app
         self.title("Редактор на програмата")
         self.geometry("700x750")
-        self.resizable(False, False)
+        self.resizable(True, True)
         self.protocol("WM_DELETE_WINDOW", self.cancel)
         self.transient(parent_app)
 

@@ -24,7 +24,7 @@ class SchoolBellApp(customtkinter.CTk):
         super().__init__(*args, **kwargs)
         self.title(APP_NAME)
         self.geometry(f"{WIDTH}x{HEIGHT}")
-        self.resizable(False, False)
+        self.resizable(True, True)
         customtkinter.set_appearance_mode("dark")
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.editor_window = None
