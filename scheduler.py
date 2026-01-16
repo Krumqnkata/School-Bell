@@ -4,6 +4,7 @@ Scheduler functions for the School Bell application.
 import schedule
 import time
 import threading
+from datetime import timedelta
 from config import DAY_MAP_BG_TO_EN
 from utils import log_message
 
@@ -55,14 +56,64 @@ def run_scheduler(app):
 def update_next_bell_label(app):
     """Update the next bell label."""
     if app.service_running:
-        if schedule.jobs:
-            next_run_val = schedule.next_run()
-            if next_run_val:
-                from config import BG_WEEKDAYS
-                from datetime import datetime
-                day_text = BG_WEEKDAYS[next_run_val.weekday()]
-                app.next_bell_label.configure(text=f"{day_text} в {next_run_val.strftime('%H:%M:%S')}")
+        from datetime import datetime
+        from config import DAY_MAP_BG_TO_EN, BG_WEEKDAYS
+        import calendar
+
+        now = datetime.now()
+        current_time = now.time()
+        current_weekday = now.weekday()
+        current_day_bg = BG_WEEKDAYS[current_weekday]
+
+        # Find the next scheduled bell
+        next_bell = None
+        min_diff = float('inf')
+
+        # Check all scheduled times
+        for entry in app.bell_times:
+            day_bg = entry['day']
+            time_str = entry['time']
+
+            # Parse the time
+            try:
+                bell_time = datetime.strptime(time_str, '%H:%M').time()
+            except ValueError:
+                continue
+
+            # Calculate the difference in days and time
+            day_index = BG_WEEKDAYS.index(day_bg)
+
+            if day_index == current_weekday:
+                # Same day - check if time has passed
+                if bell_time > current_time:
+                    # Today's bell hasn't happened yet
+                    diff_seconds = (datetime.combine(now.date(), bell_time) - now).total_seconds()
+                    if 0 < diff_seconds < min_diff:
+                        min_diff = diff_seconds
+                        next_bell = (day_bg, time_str)
+            elif day_index > current_weekday:
+                # Future day in this week
+                days_ahead = day_index - current_weekday
+                temp_date = now + timedelta(days=days_ahead)
+                temp_datetime = datetime.combine(temp_date.date(), bell_time)
+                diff_seconds = (temp_datetime - now).total_seconds()
+                if diff_seconds < min_diff:
+                    min_diff = diff_seconds
+                    next_bell = (day_bg, time_str)
             else:
-                app.next_bell_label.configure(text="Няма предстоящи")
+                # Day in next week
+                days_ahead = 7 - current_weekday + day_index
+                temp_date = now + timedelta(days=days_ahead)
+                temp_datetime = datetime.combine(temp_date.date(), bell_time)
+                diff_seconds = (temp_datetime - now).total_seconds()
+                if diff_seconds < min_diff:
+                    min_diff = diff_seconds
+                    next_bell = (day_bg, time_str)
+
+        if next_bell:
+            day, time_str = next_bell
+            app.next_bell_label.configure(text=f"{day} в {time_str}")
         else:
-            app.next_bell_label.configure(text="Няма планирани")
+            app.next_bell_label.configure(text="Няма предстоящи")
+    else:
+        app.next_bell_label.configure(text="--:--:--")
