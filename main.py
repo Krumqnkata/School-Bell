@@ -292,6 +292,9 @@ class SchoolBellApp(customtkinter.CTk):
         self.log_box = Text(self.center_panel, wrap=WORD, state="disabled", bg="#2B2B2B", fg="white", bd=0, font=("Consolas", 11))
         self.log_box.grid(row=0, column=0, sticky="nswe")
 
+        self.log_box.tag_config('timestamp', foreground='orange')
+        self.log_box.tag_config('message', foreground='white')
+
     def setup_right_panel(self):
         self.right_panel = customtkinter.CTkFrame(self, fg_color="transparent")
         self.right_panel.grid(row=0, column=2, sticky="nswe", padx=20, pady=20)
@@ -371,7 +374,8 @@ class SchoolBellApp(customtkinter.CTk):
     def _log_thread_safe(self, msg):
         now = datetime.now().strftime("%H:%M:%S")
         self.log_box.config(state="normal")
-        self.log_box.insert(END, f"[{now}] {msg}\n")
+        self.log_box.insert(END, f"[{now}] ", 'timestamp')
+        self.log_box.insert(END, f"{msg}\n", 'message')
         self.log_box.config(state="disabled")
         self.log_box.see(END)
 
