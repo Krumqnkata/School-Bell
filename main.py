@@ -84,7 +84,7 @@ class ScheduleEditorWindow(customtkinter.CTkToplevel):
         targets_frame = customtkinter.CTkFrame(bulk_edit_frame, fg_color="transparent")
         targets_frame.grid(row=3, column=0, columnspan=3, sticky="ew", pady=5)
         for i, day in enumerate(DAYS_OF_WEEK):
-            var = customtkinter.StringVar(onvalue=day, offvalue="")
+            var = customtkinter.StringVar()
             cb = customtkinter.CTkCheckBox(targets_frame, text=day, variable=var, onvalue=day, offvalue="")
             cb.grid(row=i // 4, column=i % 4, padx=5, pady=2, sticky="w")
             self.bulk_target_day_vars[day] = var
@@ -208,6 +208,7 @@ class SchoolBellApp(customtkinter.CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.editor_window = None
         self.songs_window = None
+        self.last_csv_mod_time = 0
 
         if not os.path.exists(RESOURCES_DIR):
             os.makedirs(RESOURCES_DIR)
@@ -226,22 +227,62 @@ class SchoolBellApp(customtkinter.CTk):
         mixer.init()
 
         self.bell_times = self.load_schedule()
-        self.populate_schedule_display()
         self.log_message("Приложението е готово. Натиснете 'СТАРТ'.")
+        
+        self.start_ui_update_loops()
+
+    def start_ui_update_loops(self):
+        # Update digital clock
+        self.update_digital_clock()
+        # Update schedule display
+        self.populate_schedule_display()
+        # Update next bell label
+        self.update_next_bell_label()
+
+        # Check for external CSV changes
+        try:
+            mod_time = os.path.getmtime(SCHEDULE_FILE)
+            if self.last_csv_mod_time != 0 and mod_time != self.last_csv_mod_time:
+                self.log_message("Открита е промяна в schedule.csv. Презареждане...")
+                self.reload_schedule_from_csv()
+            self.last_csv_mod_time = mod_time
+        except FileNotFoundError:
+            pass # Handled by load_schedule
+
+        # Schedule next update
+        self.after(1000, self.start_ui_update_loops)
+
+    def reload_schedule_from_csv(self):
+        self.bell_times = self.load_schedule()
+        self.log_message("Програмата е презаредена от CSV файла.")
+        if self.service_running:
+            self.log_message("Рестартиране на услугата с новата програма...")
+            self.stop_service()
+            self.start_service()
 
     def setup_left_panel(self):
         self.left_panel = customtkinter.CTkFrame(self, fg_color="transparent")
         self.left_panel.grid(row=0, column=0, sticky="nswe", padx=20, pady=20)
-        self.left_panel.grid_rowconfigure(4, weight=1) 
+        self.left_panel.grid_rowconfigure(6, weight=1) 
         customtkinter.CTkLabel(self.left_panel, text="СТАТУС:", font=customtkinter.CTkFont(size=20, weight="bold")).grid(row=0, column=0, padx=20, pady=(10, 5), sticky="w")
         self.status_label = customtkinter.CTkLabel(self.left_panel, text="СПРЯН", text_color=RED, font=customtkinter.CTkFont(size=18, weight="bold"))
         self.status_label.grid(row=1, column=0, padx=20, pady=5, sticky="w")
-        customtkinter.CTkLabel(self.left_panel, text="Следващ звънец:", font=customtkinter.CTkFont(size=16)).grid(row=2, column=0, padx=20, pady=(20, 5), sticky="w")
+        
+        customtkinter.CTkLabel(self.left_panel, text="Текущо време:", font=customtkinter.CTkFont(size=16)).grid(row=2, column=0, padx=20, pady=(20, 5), sticky="w")
+        self.digital_clock_label = customtkinter.CTkLabel(self.left_panel, text="--:--:--", font=customtkinter.CTkFont(size=18, weight="bold"))
+        self.digital_clock_label.grid(row=3, column=0, padx=20, pady=5, sticky="w")
+
+        customtkinter.CTkLabel(self.left_panel, text="Следващ звънец:", font=customtkinter.CTkFont(size=16)).grid(row=4, column=0, padx=20, pady=(20, 5), sticky="w")
         self.next_bell_label = customtkinter.CTkLabel(self.left_panel, text="--:--:--", font=customtkinter.CTkFont(size=14, weight="bold"))
-        self.next_bell_label.grid(row=3, column=0, padx=20, pady=5, sticky="w")
+        self.next_bell_label.grid(row=5, column=0, padx=20, pady=5, sticky="w")
         
         self.start_stop_button = customtkinter.CTkButton(self.left_panel, text="СТАРТ", command=self.toggle_service)
-        self.start_stop_button.grid(row=5, column=0, padx=20, pady=20, sticky="ew")
+        self.start_stop_button.grid(row=7, column=0, padx=20, pady=20, sticky="ew")
+        
+        
+        
+    def update_digital_clock(self):
+        self.digital_clock_label.configure(text=datetime.now().strftime("%H:%M:%S"))
 
     def setup_center_panel(self):
         self.center_panel = customtkinter.CTkFrame(self, fg_color="transparent")
@@ -288,7 +329,6 @@ class SchoolBellApp(customtkinter.CTk):
         self.bell_times = new_schedule
         self.save_schedule(self.bell_times)
         self.log_message("Програмата беше обновена.")
-        self.populate_schedule_display()
         if self.service_running:
             self.log_message("Рестартиране на услугата с новата програма...")
             self.stop_service()
@@ -297,6 +337,7 @@ class SchoolBellApp(customtkinter.CTk):
     def load_schedule(self):
         schedule_data = []
         try:
+            self.last_csv_mod_time = os.path.getmtime(SCHEDULE_FILE)
             with open(SCHEDULE_FILE, mode='r', newline='', encoding='utf-8') as file:
                 reader = csv.DictReader(file)
                 fieldnames = reader.fieldnames
@@ -320,6 +361,7 @@ class SchoolBellApp(customtkinter.CTk):
                 writer = csv.DictWriter(file, fieldnames=['Ден', 'Час', 'Песен'])
                 writer.writeheader()
                 writer.writerows([{'Ден': r['day'], 'Час': r['time'], 'Песен': r.get('song')} for r in schedule_data])
+            self.last_csv_mod_time = os.path.getmtime(SCHEDULE_FILE)
         except Exception as e:
             self.log_message(f"[ГРЕШКА] при запазване на {SCHEDULE_FILE}: {e}")
 
@@ -368,7 +410,8 @@ class SchoolBellApp(customtkinter.CTk):
                     self.log_message(f"[ГРЕШКА] Невалидна задача: {job['day']} в {job['time']}. Грешка: {e}")
         
         self.log_message("Всички задачи са планирани.")
-        self.after(0, self.update_next_bell_label)
+        
+        # self.after(0, self.update_next_bell_label) # Handled by start_ui_update_loops
 
         while self.service_running:
             schedule.run_pending()
@@ -377,7 +420,7 @@ class SchoolBellApp(customtkinter.CTk):
     def update_next_bell_label(self):
         if self.service_running:
             if schedule and schedule.jobs:
-                next_run_val = schedule.next_run
+                next_run_val = schedule.next_run()
                 if next_run_val:
                     day_text = BG_WEEKDAYS[next_run_val.weekday()]
                     self.next_bell_label.configure(text=f"{day_text} в {next_run_val.strftime('%H:%M:%S')}")
@@ -386,7 +429,7 @@ class SchoolBellApp(customtkinter.CTk):
             else:
                 self.next_bell_label.configure(text="Няма планирани")
             
-            self.after(1000, self.update_next_bell_label)
+            # self.after(1000, self.update_next_bell_label) # Handled by start_ui_update_loops
 
     def play_song(self, song_name=None):
         self.log_message("Време е за звънец! Търсене на песен...")
