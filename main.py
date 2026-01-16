@@ -209,9 +209,14 @@ class SchoolBellApp(customtkinter.CTk):
         self.editor_window = None
         self.songs_window = None
         self.last_csv_mod_time = 0
+        self.quiet_mode = customtkinter.BooleanVar()
+        self.manual_ring_playing_thread = None # New attribute to track manual play thread
 
         if not os.path.exists(RESOURCES_DIR):
             os.makedirs(RESOURCES_DIR)
+
+        # Initialize song list
+        self.song_list = ["Случайна"] + [s for s in os.listdir(RESOURCES_DIR) if s.endswith((".mp3", ".wav", ".ogg"))]
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=2)
@@ -225,6 +230,7 @@ class SchoolBellApp(customtkinter.CTk):
         self.service_running = False
         self.scheduler_thread = None
         mixer.init()
+        mixer.music.set_volume(0.5) # Set default volume
 
         self.bell_times = self.load_schedule()
         self.log_message("Приложението е готово. Натиснете 'СТАРТ'.")
@@ -263,7 +269,8 @@ class SchoolBellApp(customtkinter.CTk):
     def setup_left_panel(self):
         self.left_panel = customtkinter.CTkFrame(self, fg_color="transparent")
         self.left_panel.grid(row=0, column=0, sticky="nswe", padx=20, pady=20)
-        self.left_panel.grid_rowconfigure(6, weight=1) 
+        self.left_panel.grid_rowconfigure(12, weight=1) # Adjusted for new buttons
+        
         customtkinter.CTkLabel(self.left_panel, text="СТАТУС:", font=customtkinter.CTkFont(size=20, weight="bold")).grid(row=0, column=0, padx=20, pady=(10, 5), sticky="w")
         self.status_label = customtkinter.CTkLabel(self.left_panel, text="СПРЯН", text_color=RED, font=customtkinter.CTkFont(size=18, weight="bold"))
         self.status_label.grid(row=1, column=0, padx=20, pady=5, sticky="w")
@@ -275,12 +282,99 @@ class SchoolBellApp(customtkinter.CTk):
         customtkinter.CTkLabel(self.left_panel, text="Следващ звънец:", font=customtkinter.CTkFont(size=16)).grid(row=4, column=0, padx=20, pady=(20, 5), sticky="w")
         self.next_bell_label = customtkinter.CTkLabel(self.left_panel, text="--:--:--", font=customtkinter.CTkFont(size=14, weight="bold"))
         self.next_bell_label.grid(row=5, column=0, padx=20, pady=5, sticky="w")
+
+        customtkinter.CTkLabel(self.left_panel, text="Сила на звука:", font=customtkinter.CTkFont(size=16)).grid(row=6, column=0, padx=20, pady=(20, 5), sticky="w")
+
+        volume_control_frame = customtkinter.CTkFrame(self.left_panel, fg_color="transparent")
+        volume_control_frame.grid(row=7, column=0, padx=20, pady=5, sticky="ew")
+        volume_control_frame.grid_columnconfigure(0, weight=1)
+
+        self.volume_slider = customtkinter.CTkSlider(volume_control_frame, from_=0, to=1, command=self.set_volume)
+        self.volume_slider.set(0.5)
+        self.volume_slider.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+
+        self.volume_percentage_label = customtkinter.CTkLabel(volume_control_frame, text="50%", width=40)
+        self.volume_percentage_label.grid(row=0, column=1, sticky="w")
+
+        self.quiet_mode_checkbox = customtkinter.CTkCheckBox(self.left_panel, text="Тих режим", variable=self.quiet_mode)
+        self.quiet_mode_checkbox.grid(row=8, column=0, padx=20, pady=10, sticky="w")
+
+        # Frame for manual ring controls
+        manual_ring_frame = customtkinter.CTkFrame(self.left_panel, fg_color="transparent")
+        manual_ring_frame.grid(row=9, column=0, padx=20, pady=10, sticky="ew")
+        manual_ring_frame.grid_columnconfigure(0, weight=1)
+
+        # Dropdown for selecting specific song
+        self.manual_song_var = customtkinter.StringVar(value=self.song_list[0])
+        self.manual_song_dropdown = customtkinter.CTkOptionMenu(manual_ring_frame, variable=self.manual_song_var, values=self.song_list, width=140)
+        self.manual_song_dropdown.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+
+        self.manual_ring_button = customtkinter.CTkButton(manual_ring_frame, text="Пусни звънеца сега", command=self.manual_ring)
+        self.manual_ring_button.grid(row=0, column=1, sticky="ew")
         
+        # Moved from setup_right_panel
+        self.edit_button = customtkinter.CTkButton(self.left_panel, text="Редактирай програмата", command=self.open_schedule_editor)
+        self.edit_button.grid(row=10, column=0, padx=20, pady=10, sticky="ew")
+
         self.start_stop_button = customtkinter.CTkButton(self.left_panel, text="СТАРТ", command=self.toggle_service)
-        self.start_stop_button.grid(row=7, column=0, padx=20, pady=20, sticky="ew")
+        self.start_stop_button.grid(row=11, column=0, padx=20, pady=20, sticky="sew")
         
-        
-        
+    def set_volume(self, volume):
+        mixer.music.set_volume(float(volume))
+        # Update the volume percentage label
+        volume_percent = int(float(volume) * 100)
+        self.volume_percentage_label.configure(text=f"{volume_percent}%")
+
+    def manual_ring(self):
+        if self.quiet_mode.get():
+            self.log_message("Ръчното пускане е спряно (Тих режим).")
+            return
+
+        # Check if currently playing
+        if self.manual_ring_button.cget("text") == "Спри звънеца":
+            # Music is currently playing, so stop it
+            if mixer.music.get_busy():
+                mixer.music.stop()
+            self.log_message("Ръчното пускане е спряно.")
+            self._reset_manual_ring_button()
+        else:
+            # Start new playback
+            self.manual_ring_button.configure(text="Спри звънеца", fg_color=RED)
+            self.log_message("Ръчно пускане на звънеца...")
+
+            # Get selected song from dropdown
+            selected_song = self.manual_song_var.get()
+            if selected_song == "Случайна":
+                selected_song = None
+
+            self.manual_ring_playing_thread = threading.Thread(
+                target=self._play_manual_bell,
+                args=(selected_song,),
+                daemon=True
+            )
+            self.manual_ring_playing_thread.start()
+            self.after(100, self._check_manual_ring_thread)
+
+    def _play_manual_bell(self, song_name=None):
+        # Play the selected song
+        self.play_song_manual(song_name=song_name)
+        # Only reset button if music wasn't stopped externally
+        if self.manual_ring_button.cget("text") == "Спри звънеца":
+            self.after(0, self._reset_manual_ring_button)
+
+    def _reset_manual_ring_button(self):
+        self.manual_ring_button.configure(text="Пусни звънеца сега", fg_color=customtkinter.ThemeManager.theme["CTkButton"]["fg_color"])
+        self.manual_ring_playing_thread = None
+        self.log_message("Ръчен звънец приключи.")
+
+    def _check_manual_ring_thread(self):
+        if self.manual_ring_playing_thread and self.manual_ring_playing_thread.is_alive():
+            self.after(100, self._check_manual_ring_thread)
+        else:
+            # Thread is no longer alive, ensure button is reset
+            if self.manual_ring_button.cget("text") == "Звънецът е пуснат": # Only reset if still showing playing status
+                self._reset_manual_ring_button()
+
     def update_digital_clock(self):
         self.digital_clock_label.configure(text=datetime.now().strftime("%H:%M:%S"))
 
@@ -305,8 +399,8 @@ class SchoolBellApp(customtkinter.CTk):
         self.schedule_display_title.grid(row=0, column=0, padx=10, pady=(10, 10), sticky="w")
         self.schedule_display_frame = customtkinter.CTkScrollableFrame(self.right_panel, fg_color="transparent")
         self.schedule_display_frame.grid(row=1, column=0, sticky="nsew", padx=10)
-        self.edit_button = customtkinter.CTkButton(self.right_panel, text="Редактирай програмата", command=self.open_schedule_editor)
-        self.edit_button.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
+        # self.edit_button = customtkinter.CTkButton(self.right_panel, text="Редактирай програмата", command=self.open_schedule_editor) # MOVED
+        # self.edit_button.grid(row=2, column=0, padx=10, pady=10, sticky="ew") # MOVED
 
     def populate_schedule_display(self):
         for widget in self.schedule_display_frame.winfo_children():
@@ -415,8 +509,6 @@ class SchoolBellApp(customtkinter.CTk):
         
         self.log_message("Всички задачи са планирани.")
         
-        # self.after(0, self.update_next_bell_label) # Handled by start_ui_update_loops
-
         while self.service_running:
             schedule.run_pending()
             time.sleep(1)
@@ -432,17 +524,18 @@ class SchoolBellApp(customtkinter.CTk):
                     self.next_bell_label.configure(text="Няма предстоящи")
             else:
                 self.next_bell_label.configure(text="Няма планирани")
-            
-            # self.after(1000, self.update_next_bell_label) # Handled by start_ui_update_loops
 
     def play_song(self, song_name=None):
+        if self.quiet_mode.get():
+            return schedule.CancelJob
+
         self.log_message("Време е за звънец! Търсене на песен...")
         try:
             song_list = [s for s in os.listdir(RESOURCES_DIR) if s.endswith((".mp3", ".wav", ".ogg"))]
             if not song_list:
                 self.log_message(f"[ГРЕШКА] Няма песни в '{RESOURCES_DIR}'.")
                 return schedule.CancelJob
-            
+
             song_to_play = None
             if song_name and song_name in song_list:
                 song_to_play = song_name
@@ -450,17 +543,47 @@ class SchoolBellApp(customtkinter.CTk):
                 song_to_play = random.choice(song_list)
 
             local_path = os.path.join(RESOURCES_DIR, song_to_play)
-            
+
             self.log_message(f"Пускане на '{song_to_play}'...")
             mixer.music.load(local_path)
             mixer.music.play()
-            
+
             while mixer.music.get_busy() and self.service_running:
                 time.sleep(0.5)
 
         except Exception as e:
             self.log_message(f"[ГРЕШКА] Проблем при пускане на песен: {e}")
         return schedule.CancelJob
+
+    def play_song_manual(self, song_name=None):
+        self.log_message("Време е за звънец! Търсене на песен...")
+        try:
+            song_list = [s for s in os.listdir(RESOURCES_DIR) if s.endswith((".mp3", ".wav", ".ogg"))]
+            if not song_list:
+                self.log_message(f"[ГРЕШКА] Няма песни в '{RESOURCES_DIR}'.")
+                return
+
+            song_to_play = None
+            if song_name and song_name in song_list:
+                song_to_play = song_name
+            else:
+                song_to_play = random.choice(song_list)
+
+            local_path = os.path.join(RESOURCES_DIR, song_to_play)
+
+            self.log_message(f"Пускане на '{song_to_play}'...")
+            mixer.music.load(local_path)
+            mixer.music.play()
+
+            # Wait for the music to finish or be stopped manually
+            while mixer.music.get_busy():
+                time.sleep(0.5)
+                # Check if the button text has changed back to "Пусни звънеца сега" indicating stop was requested
+                if self.manual_ring_button.cget("text") == "Пусни звънеца сега":
+                    break
+
+        except Exception as e:
+            self.log_message(f"[ГРЕШКА] Проблем при пускане на песен: {e}")
 
     def on_closing(self):
         if self.service_running: self.stop_service()
