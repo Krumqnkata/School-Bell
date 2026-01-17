@@ -71,13 +71,13 @@ class ScheduleEditorWindow(customtkinter.CTkToplevel):
         # Container for the edit tab content
         edit_container = customtkinter.CTkFrame(self.edit_tab)
         edit_container.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-        edit_container.grid_rowconfigure(2, weight=1)
+        edit_container.grid_rowconfigure(3, weight=1)  # Changed to row 3 to account for new row
         edit_container.grid_columnconfigure(0, weight=1)
 
         # Day selector frame
         day_selector_frame = customtkinter.CTkFrame(edit_container, fg_color="transparent")
         day_selector_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
-        day_selector_frame.grid_columnconfigure(1, weight=1)
+        day_selector_frame.grid_columnconfigure(2, weight=1)  # Updated to account for new column
 
         customtkinter.CTkLabel(day_selector_frame, text="Избери ден:").grid(row=0, column=0, padx=(0, 10), sticky="w")
         self.selected_day_var = customtkinter.StringVar(value=DAYS_OF_WEEK[0])
@@ -89,6 +89,34 @@ class ScheduleEditorWindow(customtkinter.CTkToplevel):
             command=lambda choice: self.on_day_change()
         )
         self.day_selector.grid(row=0, column=1, sticky="ew", padx=(0, 10))
+
+        # Select/Deselect all button
+        self.select_all_var = customtkinter.BooleanVar()
+        self.select_all_checkbox = customtkinter.CTkCheckBox(
+            day_selector_frame,
+            text="Селектирай всички",
+            variable=self.select_all_var,
+            command=self.toggle_select_all
+        )
+        self.select_all_checkbox.grid(row=0, column=2, sticky="e", padx=(10, 0))
+
+        # Bulk edit frame for selected entries
+        bulk_edit_frame = customtkinter.CTkFrame(edit_container, fg_color="transparent")
+        bulk_edit_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
+        bulk_edit_frame.grid_columnconfigure(1, weight=1)
+
+        customtkinter.CTkLabel(bulk_edit_frame, text="Масово редактиране на селектирани записи:").grid(row=0, column=0, padx=(0, 5), sticky="w")
+
+        from config import RESOURCES_DIR
+        bulk_song_list = ["Случайна"] + [s for s in os.listdir(RESOURCES_DIR) if s.endswith((".mp3", ".wav", ".ogg"))]
+        self.bulk_song_var = customtkinter.StringVar(value=bulk_song_list[0])
+        bulk_song_option = customtkinter.CTkOptionMenu(bulk_edit_frame, variable=self.bulk_song_var, values=bulk_song_list, width=140)
+        bulk_song_option.grid(row=0, column=1, sticky="w", padx=(0, 10))
+
+        # Bulk edit button
+        bulk_edit_button = customtkinter.CTkButton(bulk_edit_frame, text="Редактирай селектирани", width=120,
+                                                 fg_color="#8B4513", hover_color="#A0522D", command=self.bulk_edit_selected_songs)
+        bulk_edit_button.grid(row=0, column=2, padx=(5,0))
 
         # Scrollable frame for schedule entries
         self.editor_frame = customtkinter.CTkScrollableFrame(edit_container, label_text="Програма за избрания ден", height=300)
@@ -130,8 +158,26 @@ class ScheduleEditorWindow(customtkinter.CTkToplevel):
         copy_container.grid_rowconfigure(0, weight=1)
         copy_container.grid_columnconfigure(0, weight=1)
 
-        # Bulk edit section
-        bulk_edit_frame = customtkinter.CTkFrame(copy_container, fg_color="transparent")
+        # Create notebook-style tabs for copy operations
+        copy_tabview = customtkinter.CTkTabview(copy_container)
+        copy_tabview.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        copy_tabview.grid_rowconfigure(0, weight=1)
+        copy_tabview.grid_columnconfigure(0, weight=1)
+
+        # Create tabs for different bulk operations
+        copy_schedule_tab = copy_tabview.add("Копиране на програма")
+
+        # Setup copy schedule tab
+        self.setup_copy_schedule_tab(copy_schedule_tab)
+
+
+    def setup_copy_schedule_tab(self, parent_frame):
+        """Setup the copy schedule tab"""
+        parent_frame.grid_rowconfigure(0, weight=1)
+        parent_frame.grid_columnconfigure(0, weight=1)
+
+        # Main frame for copy schedule content
+        bulk_edit_frame = customtkinter.CTkFrame(parent_frame, fg_color="transparent")
         bulk_edit_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         bulk_edit_frame.grid_columnconfigure(1, weight=1)
 
@@ -183,6 +229,115 @@ class ScheduleEditorWindow(customtkinter.CTkToplevel):
                                          font=customtkinter.CTkFont(size=11), text_color="orange")
         info_label.grid(row=5, column=0, columnspan=3, sticky="w", pady=(10,0))
 
+    def setup_bulk_edit_songs_tab(self, parent_frame):
+        """Setup the bulk edit songs tab"""
+        parent_frame.grid_rowconfigure(0, weight=1)
+        parent_frame.grid_columnconfigure(0, weight=1)
+
+        # Main frame for bulk edit songs content
+        bulk_edit_songs_frame = customtkinter.CTkFrame(parent_frame, fg_color="transparent")
+        bulk_edit_songs_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        bulk_edit_songs_frame.grid_columnconfigure(1, weight=1)
+
+        # Title for the bulk edit songs section
+        title_label = customtkinter.CTkLabel(bulk_edit_songs_frame, text="Масово редактиране на песни",
+                                           font=customtkinter.CTkFont(size=16, weight="bold"))
+        title_label.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
+
+        # Description
+        desc_label = customtkinter.CTkLabel(bulk_edit_songs_frame, text="Изберете дни и нова песен, за да замените всички песни за тези дни",
+                                          font=customtkinter.CTkFont(size=12))
+        desc_label.grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 15))
+
+        # Days selection
+        days_frame = customtkinter.CTkFrame(bulk_edit_songs_frame, fg_color="transparent")
+        days_frame.grid(row=2, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+
+        customtkinter.CTkLabel(days_frame, text="Изберете дни:").grid(row=0, column=0, sticky="w", padx=(0, 5), pady=(5,0))
+
+        self.bulk_edit_song_day_vars = {}
+        checkboxes_frame = customtkinter.CTkFrame(days_frame, fg_color="transparent")
+        checkboxes_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=5)
+
+        # Arrange checkboxes in a grid (2 rows of 4 columns for 7 days)
+        for i, day in enumerate(DAYS_OF_WEEK):
+            var = customtkinter.StringVar()
+            cb = customtkinter.CTkCheckBox(checkboxes_frame, text=day, variable=var, onvalue=day, offvalue="")
+            row_idx = i // 4
+            col_idx = i % 4
+            cb.grid(row=row_idx, column=col_idx, padx=5, pady=2, sticky="w")
+            self.bulk_edit_song_day_vars[day] = var
+
+        # Song selection
+        song_selection_frame = customtkinter.CTkFrame(bulk_edit_songs_frame, fg_color="transparent")
+        song_selection_frame.grid(row=3, column=0, columnspan=3, sticky="ew", padx=5, pady=10)
+
+        customtkinter.CTkLabel(song_selection_frame, text="Нова песен:").grid(row=0, column=0, sticky="w", padx=(0, 5))
+
+        from config import RESOURCES_DIR
+        self.bulk_edit_song_list = ["Случайна"] + [s for s in os.listdir(RESOURCES_DIR) if s.endswith((".mp3", ".wav", ".ogg"))]
+        self.bulk_edit_song_var = customtkinter.StringVar(value=self.bulk_edit_song_list[0])
+        song_option = customtkinter.CTkOptionMenu(song_selection_frame, variable=self.bulk_edit_song_var, values=self.bulk_edit_song_list, width=140)
+        song_option.grid(row=0, column=1, sticky="w", padx=(0, 10))
+
+        # Bulk edit songs button
+        bulk_edit_button = customtkinter.CTkButton(bulk_edit_songs_frame, text="Замени песните", width=120,
+                                                 fg_color="#8B4513", hover_color="#A0522D", command=self.bulk_edit_songs)
+        bulk_edit_button.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(20,0))
+
+        # Info text
+        info_label = customtkinter.CTkLabel(bulk_edit_songs_frame, text="Забележка: Това ще замени всички песни за избраните дни!",
+                                         font=customtkinter.CTkFont(size=11), text_color="orange")
+        info_label.grid(row=5, column=0, columnspan=3, sticky="w", pady=(10,0))
+
+    def bulk_edit_songs(self):
+        """Bulk edit songs for selected days"""
+        selected_days = [var.get() for var in self.bulk_edit_song_day_vars.values() if var.get()]
+        new_song = self.bulk_edit_song_var.get()
+
+        if not selected_days:
+            return
+
+        # Process each selected day
+        for day in selected_days:
+            # Get all entries for this day
+            day_entries = [entry for entry in self.temp_schedule if entry['day'] == day]
+
+            # Update the song for each entry
+            for entry in day_entries:
+                if new_song == "Случайна":
+                    entry['song'] = None  # Will trigger random song
+                else:
+                    entry['song'] = new_song
+
+        # Refresh the display
+        self.populate_editor()
+        # If currently viewing one of the modified days, update the display
+        if self.selected_day_var.get() in selected_days:
+            self.populate_editor()
+
+    def bulk_copy_schedule(self):
+        source_day = self.bulk_source_day_var.get()
+        target_days = [var.get() for var in self.bulk_target_day_vars.values() if var.get()]
+
+        if not target_days:
+            return
+
+        source_schedule = [entry for entry in self.parent_app.bell_times if entry['day'] == source_day]
+
+        # Remove existing entries for target days from temp_schedule
+        filtered_temp = [entry for entry in self.temp_schedule if entry['day'] not in target_days]
+
+        # Add copied entries
+        for day in target_days:
+            for source_entry in source_schedule:
+                new_entry = source_entry.copy()
+                new_entry['day'] = day
+                filtered_temp.append(new_entry)
+
+        self.temp_schedule = filtered_temp
+        self.populate_editor()
+
     def on_day_change(self, *args):
         """Callback when the selected day changes"""
         # Update the view to show entries for the selected day
@@ -211,19 +366,32 @@ class ScheduleEditorWindow(customtkinter.CTkToplevel):
             content_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
             content_frame.grid_columnconfigure(0, weight=1)
 
+            # Add checkbox for bulk selection
+            checkbox_var = customtkinter.BooleanVar()
+            checkbox = customtkinter.CTkCheckBox(content_frame, text="", variable=checkbox_var, width=20)
+            checkbox.grid(row=0, column=0, sticky="w", padx=(0, 5))
+
             song_display = entry.get('song') if entry.get('song') else "Случайна"
             label = customtkinter.CTkLabel(content_frame, text=f"{entry['time']} ({song_display})", anchor="w")
-            label.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+            label.grid(row=0, column=1, sticky="ew", padx=(0, 10))
 
             # Button frame for edit/delete buttons
             button_frame = customtkinter.CTkFrame(content_frame, fg_color="transparent")
-            button_frame.grid(row=0, column=1, sticky="e")
+            button_frame.grid(row=0, column=2, sticky="e")
 
             edit_button = customtkinter.CTkButton(button_frame, text="Промени", width=70, fg_color="#3a7ebf", command=lambda e=entry, f=frame: self.toggle_inline_edit(e, f))
             edit_button.grid(row=0, column=0, padx=2)
             delete_button = customtkinter.CTkButton(button_frame, text="Изтрий", width=70, fg_color="#E84545", command=lambda e=entry, f=frame: self.delete_schedule_entry(e, f))
             delete_button.grid(row=0, column=1, padx=2)
-            self.entry_widgets[entry_id] = {'frame': frame, 'label': label, 'edit_button': edit_button}
+
+            self.entry_widgets[entry_id] = {
+                'frame': frame,
+                'label': label,
+                'edit_button': edit_button,
+                'checkbox': checkbox,
+                'checkbox_var': checkbox_var,
+                'entry': entry
+            }
 
     def toggle_inline_edit(self, entry, frame):
         widgets = self.entry_widgets[id(entry)]
@@ -277,6 +445,39 @@ class ScheduleEditorWindow(customtkinter.CTkToplevel):
             self.populate_editor()
         else:
             print("Invalid time format for inline edit")
+
+    def toggle_select_all(self):
+        """Toggle selection of all entries"""
+        select_all = self.select_all_var.get()
+        for entry_id, widgets in self.entry_widgets.items():
+            widgets['checkbox_var'].set(select_all)
+
+    def bulk_edit_selected_songs(self):
+        """Bulk edit songs for selected entries"""
+        selected_entries = []
+        for entry_id, widgets in self.entry_widgets.items():
+            if widgets['checkbox_var'].get():
+                selected_entries.append(widgets['entry'])
+
+        if not selected_entries:
+            return
+
+        new_song = self.bulk_song_var.get()
+        for entry in selected_entries:
+            if new_song == "Случайна":
+                entry['song'] = None  # Will trigger random song
+            else:
+                entry['song'] = new_song
+
+        # Refresh the display
+        self.populate_editor()
+
+    def on_day_change(self, *args):
+        """Callback when the selected day changes"""
+        # Reset the select all checkbox when changing days
+        self.select_all_var.set(False)
+        # Update the view to show entries for the selected day
+        self.populate_editor()
 
     def add_schedule_entry(self):
         day = self.selected_day_var.get()  # Use the selected day from the dropdown
