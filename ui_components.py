@@ -11,7 +11,7 @@ def setup_left_panel(app):
     """Setup the left panel of the application."""
     app.left_panel = customtkinter.CTkFrame(app, fg_color="transparent")
     app.left_panel.grid(row=0, column=0, sticky="nswe", padx=20, pady=20)
-    app.left_panel.grid_rowconfigure(12, weight=1) # Adjusted for new buttons
+    app.left_panel.grid_rowconfigure(13, weight=1) # Adjusted for new buttons
 
     customtkinter.CTkLabel(app.left_panel, text="СТАТУС:", font=customtkinter.CTkFont(size=20, weight="bold")).grid(row=0, column=0, padx=20, pady=(10, 5), sticky="w")
     app.status_label = customtkinter.CTkLabel(app.left_panel, text="СПРЯН", text_color=RED, font=customtkinter.CTkFont(size=18, weight="bold"))
@@ -61,8 +61,11 @@ def setup_left_panel(app):
     app.start_stop_button = customtkinter.CTkButton(app.left_panel, text="СТАРТ", command=app.toggle_service)
     app.start_stop_button.grid(row=11, column=0, padx=20, pady=20, sticky="sew")
 
+    disclaimer_label = customtkinter.CTkLabel(app.left_panel, text="Важно: При промяна/добавяне на песни, рестартирайте програмата.", font=customtkinter.CTkFont(size=11, slant="italic"), text_color="yellow", wraplength=250)
+    disclaimer_label.grid(row=12, column=0, padx=20, pady=(0, 10), sticky="s")
+
     app.about_button = customtkinter.CTkButton(app.left_panel, text="Относно", command=app.show_about, fg_color="transparent", hover_color="#555555", width=60)
-    app.about_button.grid(row=12, column=0, padx=20, pady=(0, 20), sticky="s")
+    app.about_button.grid(row=13, column=0, padx=20, pady=(0, 20), sticky="s")
 
 
 def setup_center_panel(app):
