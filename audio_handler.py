@@ -5,6 +5,7 @@ import os
 import random
 from pygame import mixer
 from config import RESOURCES_DIR
+from visual_notification import show_visual_bell_notification
 
 
 def set_volume(volume):
@@ -17,9 +18,15 @@ def set_volume(volume):
 def play_song(app, song_name=None):
     """Play a song for scheduled bells."""
     if app.quiet_mode.get():
+        # Still show visual notification even in quiet mode
+        show_visual_bell_notification(app)
         return "CANCEL_JOB"
 
     app.log_message("Време е за звънец! Търсене на песен...")
+
+    # Show visual notification
+    show_visual_bell_notification(app)
+
     try:
         song_list = [s for s in os.listdir(RESOURCES_DIR) if s.endswith((".mp3", ".wav", ".ogg"))]
         if not song_list:
@@ -50,6 +57,10 @@ def play_song(app, song_name=None):
 def play_song_manual(app, song_name=None):
     """Play a song for manual bells with stopping capability."""
     app.log_message("Време е за звънец! Търсене на песен...")
+
+    # Show visual notification
+    show_visual_bell_notification(app)
+
     try:
         song_list = [s for s in os.listdir(RESOURCES_DIR) if s.endswith((".mp3", ".wav", ".ogg"))]
         if not song_list:
