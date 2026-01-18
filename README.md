@@ -20,11 +20,9 @@
 
 1.  **Клонирайте хранилището:**
     ```bash
-    git clone https://github.com/your-username/School-Bell.git
+    git clone https://github.com/Krumqnkata/School-Bell.git
     cd School-Bell
     ```
-    *(Моля, заменете `https://github.com/your-username/School-Bell.git` с реалния URL адрес на хранилището, ако съществува, или премахнете тази стъпка, ако проектът не се управлява от Git.)*
-
 2.  **Инсталирайте зависимости:**
     Приложението разчита на няколко Python библиотеки. Инсталирайте ги с pip:
     ```bash
