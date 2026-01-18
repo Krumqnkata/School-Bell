@@ -9,6 +9,8 @@ class VisualNotification:
     def __init__(self, parent_app):
         self.parent_app = parent_app
         self.notification_window = None
+        self.bring_to_front_id = None  # Track the after ID for cancelling
+        self.auto_close_id = None  # Track the auto-close after ID for cancelling
         
     def show_visual_notification(self, message="Време е за звънец!", duration=5000):
         """
@@ -20,7 +22,7 @@ class VisualNotification:
         """
         # Close any existing notification
         if self.notification_window and self.notification_window.winfo_exists():
-            self.notification_window.destroy()
+            self.close_notification()
             
         # Create a new notification window
         self.notification_window = customtkinter.CTkToplevel(self.parent_app)
@@ -62,8 +64,8 @@ class VisualNotification:
         )
         time_label.pack(side="bottom", pady=(0, 10))
         
-        # Schedule automatic closing
-        self.notification_window.after(duration, self.close_notification)
+        # Store the auto-close after ID to be able to cancel it later
+        self.auto_close_id = self.notification_window.after(duration, self.close_notification)
         
         # Bring to front periodically to ensure it stays visible
         self.bring_to_front()
@@ -92,14 +94,34 @@ class VisualNotification:
         if self.notification_window and self.notification_window.winfo_exists():
             self.notification_window.lift()
             self.notification_window.attributes("-topmost", True)
-            # Repeat every 2 seconds to maintain topmost status
-            self.notification_window.after(2000, self.bring_to_front)
+            # Cancel any previous after call to prevent accumulation
+            if self.bring_to_front_id:
+                self.notification_window.after_cancel(self.bring_to_front_id)
+            # Repeat every 2 seconds to maintain topmost status, only if window still exists
+            if self.notification_window.winfo_exists():
+                self.bring_to_front_id = self.notification_window.after(2000, self.bring_to_front)
     
     def close_notification(self):
         """Close the notification window."""
+        # Cancel the auto-close callback if it exists
+        if hasattr(self, 'auto_close_id') and self.auto_close_id:
+            try:
+                self.notification_window.after_cancel(self.auto_close_id)
+            except:
+                pass  # Window might already be destroyed
+            self.auto_close_id = None
+
+        # Cancel the periodic bring_to_front callback
+        if self.bring_to_front_id:
+            try:
+                self.notification_window.after_cancel(self.bring_to_front_id)
+            except:
+                pass  # Window might already be destroyed
+            self.bring_to_front_id = None
+
         if self.notification_window and self.notification_window.winfo_exists():
             self.notification_window.destroy()
-            self.notification_window = None
+        self.notification_window = None
 
 
 def show_visual_bell_notification(app):
