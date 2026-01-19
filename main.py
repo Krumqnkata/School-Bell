@@ -7,7 +7,8 @@ import threading
 import time
 from tkinter import *
 import os
-from flask import Flask, render_template, request, redirect, url_for, flash, Response, jsonify
+from flask import Flask, render_template, request, Response, jsonify, flash, session, redirect
+from werkzeug.security import check_password_hash, generate_password_hash
 import shared_state
 from pygame import mixer
 from datetime import datetime
@@ -200,8 +201,72 @@ class SchoolBellApp(customtkinter.CTk):
         self.destroy()
 
 # --- Web Panel ---
-flask_app = Flask(__name__, template_folder='web_panel/templates')
-flask_app.secret_key = 'supersecretkey_for_schoolbell'
+flask_app = Flask(__name__, template_folder='web_panel/templates', static_folder='web_panel/static')
+flask_app.secret_key = 'school_bell_secret_key'  # Needed for sessions
+
+
+
+
+
+
+def load_credentials():
+    """Load username and password from web_panel_credentials.txt file."""
+    credentials_file = 'web_panel_credentials.txt'
+    if not os.path.exists(credentials_file):
+        # Create default credentials file if it doesn't exist
+        with open(credentials_file, 'w', encoding='utf-8') as f:
+            f.write("# This file contains the username and password for the web panel.\n")
+            f.write("# WARNING: Storing credentials in plain text is INSECURE and not recommended for production environments.\n")
+            f.write("#\n")
+            f.write("# Format: username:password\n")
+            f.write("# Example: admin:password123\n")
+            f.write("#\n")
+            f.write("# Default credentials:\n")
+            f.write("admin:admin123\n")
+        return {"username": "admin", "password": "admin123"}
+
+    with open(credentials_file, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith('#'):
+            # Split on the first colon only, in case password contains colons
+            parts = line.split(':', 1)
+            if len(parts) == 2:
+                username = parts[0].strip()
+                password = parts[1].strip()
+                return {"username": username, "password": password}
+
+    # If no valid credentials found, return defaults
+    return {"username": "admin", "password": "admin123"}
+
+def authenticate_user(username, password):
+    """Check if the provided username and password match the stored credentials."""
+    credentials = load_credentials()
+    return username == credentials["username"] and password == credentials["password"]
+
+def login_required(f):
+    """Decorator to require login for certain routes using HTTP Basic Auth."""
+    from functools import wraps
+    # No need for base64 import if request.authorization handles decoding
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        auth = request.authorization
+        if not auth or not authenticate_user(auth.username, auth.password):
+            return Response(
+                'Не може да се удостоверите за този URL.\n'
+                'Трябва да влезете с правилни данни.', 401,
+                {'WWW-Authenticate': 'Basic realm="Login Required"'})
+        # Store username in session for use in templates
+        session['username'] = auth.username
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+
+
 
 def get_song_list():
     """Returns a list of available songs."""
@@ -211,6 +276,7 @@ def get_song_list():
         return []
 
 @flask_app.route('/')
+@login_required
 def index():
     """Main page, displays the schedule."""
     schedule = load_schedule()
@@ -219,6 +285,7 @@ def index():
     return render_template('index.html', schedule=schedule, days_of_week=DAYS_OF_WEEK, songs=songs)
 
 @flask_app.route('/add', methods=['POST'])
+@login_required
 def add_entry():
     """Adds a new entry to the schedule."""
     day = request.form.get('day')
@@ -226,28 +293,24 @@ def add_entry():
     song = request.form.get('song')
 
     if not day or not time or not song:
-        flash('Моля, попълнете всички полета.', 'error')
-        return redirect(url_for('index'))
+        return jsonify({'status': 'error', 'message': 'Моля, попълнете всички полета.'}), 400
 
     try:
         hour, minute = map(int, time.split(':'))
         if not (0 <= hour <= 23 and 0 <= minute <= 59):
             raise ValueError("Invalid time range")
     except ValueError:
-        flash('Невалиден формат за час. Моля, използвайте HH:MM.', 'error')
-        return redirect(url_for('index'))
+        return jsonify({'status': 'error', 'message': 'Невалиден формат за час. Моля, използвайте HH:MM.'}), 400
 
     schedule = load_schedule()
     if any(entry['day'] == day and entry['time'] == time for entry in schedule):
-        flash('Такъв запис вече съществува.', 'warning')
-        return redirect(url_for('index'))
+        return jsonify({'status': 'warning', 'message': 'Такъв запис вече съществува.'}), 409 # Conflict
 
     schedule.append({'day': day, 'time': time, 'song': song if song != "Случайна" else None})
     save_schedule(schedule)
-    flash('Записът е добавен успешно.', 'success')
-    return redirect(url_for('index'))
-
+    return jsonify({'status': 'success', 'message': 'Записът е добавен успешно.'}), 201 # Created
 @flask_app.route('/delete', methods=['POST'])
+@login_required
 def delete_entry():
     """Deletes an entry from the schedule."""
     day_to_delete = request.form.get('day')
@@ -265,7 +328,7 @@ def delete_entry():
             new_schedule.append(entry)
         else:
             entry_found = True
-            
+
     if entry_found:
         save_schedule(new_schedule)
         flash('Записът е изтрит успешно.', 'success')
@@ -276,6 +339,7 @@ def delete_entry():
 
 
 @flask_app.route('/play', methods=['POST'])
+@login_required
 def play_sound_web():
     """Plays a sound file via a web request, respecting quiet mode."""
     # Check for quiet mode first
@@ -291,13 +355,13 @@ def play_sound_web():
     # Security: Ensure song_name is just a filename
     if '..' in song_name or '/' in song_name or '\\' in song_name:
         return jsonify({'status': 'error', 'message': 'Невалидно име на песен.'}), 400
-        
+
     songs = get_song_list()
     if song_name not in songs:
         return jsonify({'status': 'error', 'message': f"Песента '{song_name}' не е намерена."}), 404
 
     song_path = os.path.join(RESOURCES_DIR, song_name)
-    
+
     try:
         log_message(shared_state.gui_app, f"[WEB] Пускане на ръчен звънец: '{song_name}'...")
         mixer.music.load(song_path)
@@ -308,6 +372,7 @@ def play_sound_web():
         return jsonify({'status': 'error', 'message': f"Грешка при пускане на песента: {e}"}), 500
 
 @flask_app.route('/stop-sound', methods=['POST'])
+@login_required
 def stop_sound_web():
     """Stops any currently playing music."""
     try:
@@ -319,6 +384,7 @@ def stop_sound_web():
         return jsonify({'status': 'error', 'message': f"Грешка при спиране на музиката: {e}"}), 500
 
 @flask_app.route('/toggle-service', methods=['POST'])
+@login_required
 def toggle_service_web():
     """Toggles the scheduler service from the web panel."""
     if shared_state.gui_app:
@@ -327,6 +393,7 @@ def toggle_service_web():
     return jsonify({'status': 'error', 'message': 'GUI app not found'}), 500
 
 @flask_app.route('/toggle-quiet-mode', methods=['POST'])
+@login_required
 def toggle_quiet_mode_web():
     """Toggles the quiet mode from the web panel."""
     if shared_state.gui_app:
@@ -342,6 +409,7 @@ def toggle_quiet_mode_web():
     return jsonify({'status': 'error', 'message': 'GUI app not found'}), 500
 
 @flask_app.route('/status')
+@login_required
 def status():
     """Returns the current status of the service."""
     if shared_state.gui_app:
@@ -351,8 +419,17 @@ def status():
         })
     return jsonify({'service_running': False, 'quiet_mode': False})
 
+@flask_app.route('/keep-alive')
+@login_required
+def keep_alive():
+    """Keeps the session alive by refreshing it."""
+    # This endpoint just refreshes the session
+    session.modified = True
+    return jsonify({'status': 'ok'})
+
 
 @flask_app.route('/stream-logs')
+@login_required
 def stream_logs():
     """Streams log messages to the client using SSE."""
     def generate():
@@ -364,11 +441,12 @@ def stream_logs():
     return Response(generate(), mimetype='text/event-stream')
 
 @flask_app.route('/edit', methods=['POST'])
+@login_required
 def edit_entry():
     """Edits an existing schedule entry."""
     original_day = request.form.get('original_day')
     original_time = request.form.get('original_time')
-    
+
     new_day = request.form.get('day')
     new_time = request.form.get('time')
     new_song = request.form.get('song')
@@ -386,7 +464,7 @@ def edit_entry():
             entry['song'] = new_song if new_song != "Случайна" else None
             entry_found = True
             break
-            
+
     if entry_found:
         save_schedule(schedule)
         flash('Записът е редактиран успешно.', 'success')
@@ -394,5 +472,26 @@ def edit_entry():
         flash('Оригиналният запис не беше намерен за редакция.', 'error')
 
     return redirect(url_for('index'))
+
+@flask_app.route('/login')
+def login():
+    """Login route - since we're using HTTP Basic Auth, this just triggers the auth dialog."""
+    # This route will trigger the basic auth dialog by returning 401
+    # The actual authentication happens in the login_required decorator
+    return Response(
+        'Моля влезте с вашите данни.',
+        401,
+        {'WWW-Authenticate': 'Basic realm="Login Required"'}
+    )
+
+@flask_app.route('/logout')
+def logout():
+    """Logout route that prompts the browser to clear authentication credentials."""
+    # Return a 401 Unauthorized response to clear the basic auth credentials
+    return Response(
+        'Вие бяхте отписани от системата.',
+        401,
+        {'WWW-Authenticate': 'Basic realm="Login Required"'}
+    )
 
     

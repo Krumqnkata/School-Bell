@@ -3,6 +3,7 @@ Audio handling functions for the School Bell application.
 """
 import os
 import random
+import schedule
 from pygame import mixer
 from config import RESOURCES_DIR
 from visual_notification import show_visual_bell_notification
@@ -16,38 +17,62 @@ def set_volume(volume):
 
 
 def play_song(app, song_name=None):
-    """Play a song for scheduled bells."""
+    """Play a song for scheduled bells with a fallback to begin.mp3."""
     if app.quiet_mode.get():
-        # Still show visual notification even in quiet mode
         show_visual_bell_notification(app)
-        return "CANCEL_JOB"
+        return schedule.CancelJob
 
     app.log_message("Време е за звънец! Търсене на песен...")
-
-    # Show visual notification
     show_visual_bell_notification(app)
 
+    # --- Nested helper function for playing sound ---
+    def attempt_play(song_filename, is_fallback=False):
+        try:
+            # Check if the song file exists
+            local_path = os.path.join(RESOURCES_DIR, song_filename)
+            if not os.path.exists(local_path):
+                raise FileNotFoundError(f"Файлът '{song_filename}' не е намерен в '{RESOURCES_DIR}'.")
+
+            # Try to load and play
+            app.log_message(f"Зареждане на '{song_filename}'...")
+            mixer.music.load(local_path)
+            mixer.music.play()
+            app.log_message(f"Успешно пусната: '{song_filename}'.")
+            return True  # Indicate success
+
+        except Exception as e:
+            error_prefix = "[FALLBACK ERROR]" if is_fallback else "[SONG ERROR]"
+            app.log_message(f"{error_prefix} Неуспешно пускане на '{song_filename}': {e}")
+            return False # Indicate failure
+
+    # --- Main song selection and play logic ---
     try:
         song_list = [s for s in os.listdir(RESOURCES_DIR) if s.endswith((".mp3", ".wav", ".ogg"))]
         if not song_list:
-            app.log_message(f"[ГРЕШКА] Няма песни в '{RESOURCES_DIR}'.")
-            return "CANCEL_JOB"
+            app.log_message(f"[ГРЕШКА] Няма песни в директория '{RESOURCES_DIR}'.")
+            return schedule.CancelJob
 
-        song_to_play = None
-        if song_name and song_name in song_list:
-            song_to_play = song_name
-        else:
-            song_to_play = random.choice(song_list)
+        # Determine the INTENDED song to play
+        intended_song_filename = None
+        if song_name: # A specific song name was provided
+            intended_song_filename = song_name
+        else: # No specific song name provided (e.g., "Случайна" in schedule)
+            intended_song_filename = random.choice(song_list)
+            app.log_message(f"Няма зададена песен в графика, избрана е случайна: '{intended_song_filename}'.")
 
-        local_path = os.path.join(RESOURCES_DIR, song_to_play)
-
-        app.log_message(f"Пускане на '{song_to_play}'...")
-        mixer.music.load(local_path)
-        mixer.music.play()
+        # Attempt to play the determined first song
+        if not attempt_play(intended_song_filename):
+            # If the first attempt fails (e.g., file not found, corrupt), try the fallback
+            app.log_message(f"Първият опит за пускане на '{intended_song_filename}' се провали. Опитвам резервна песен 'begin.mp3'...")
+            if not attempt_play('begin.mp3', is_fallback=True):
+                 app.log_message(f"[CRITICAL] Неуспешно пускане и на резервната песен 'begin.mp3'.")
 
     except Exception as e:
-        app.log_message(f"[ГРЕШКА] Проблем при пускане на песен: {e}")
-    return "CANCEL_JOB"
+        app.log_message(f"[FATAL] Критична грешка в audio_handler: {e}")
+        # As a last resort, try to play the fallback even if song selection fails
+        attempt_play('begin.mp3', is_fallback=True)
+        
+    return schedule.CancelJob
 
 
 def play_song_manual(app, song_name=None):

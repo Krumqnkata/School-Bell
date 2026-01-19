@@ -7,7 +7,11 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
-        body { background-color: #f8f9fa; }
+        body {
+            background: url('{{ url_for("static", filename="background.webp") }}') no-repeat center center fixed;
+            background-size: cover;
+            min-height: 100vh;
+        }
         .container { max-width: 1140px; }
         .card { margin-bottom: 1.5rem; }
         #log-output {
@@ -28,8 +32,18 @@
 </head>
 <body>
     <div class="container py-4">
-        <h1 class="mb-4 text-center">Училищен Звънец - Уеб Контролен Панел</h1>
-        
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="mb-0">Училищен Звънец - Уеб Контролен Панел</h1>
+            <div class="dropdown">
+                <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="userMenu" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-person-circle"></i> {{ session.username }}
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userMenu">
+                    <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right"></i> Изход</a></li>
+                </ul>
+            </div>
+        </div>
+
         <div id="flash-container"></div>
 
         <!-- Main Controls -->
@@ -136,39 +150,111 @@
                 logOutput.textContent += event.data + '\n';
                 logOutput.scrollTop = logOutput.scrollHeight;
             };
-            eventSource.onerror = () => logOutput.textContent += 'Връзката със сървъра за лог съобщения прекъсна.\n';
+            eventSource.onerror = (err) => {
+                logOutput.textContent += 'Връзката със сървъра за лог съобщения прекъсна.\n';
+                // Check if it's an authentication issue
+                if(err.type === 'error') {
+                    // Redirect to login if unauthorized
+                    window.location.href = "{{ url_for('login') }}";
+                }
+            };
 
             // --- Main Controls ---
             toggleServiceBtn.addEventListener('click', () => {
-                fetch("{{ url_for('toggle_service_web') }}", { method: 'POST' }).then(updateStatus);
+                fetch("{{ url_for('toggle_service_web') }}", { method: 'POST' })
+                    .then(response => {
+                        if (!response.ok) {
+                            if (response.status === 401 || response.status === 302) {
+                                window.location.href = "{{ url_for('login') }}";
+                            }
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data) updateStatus();
+                    });
             });
-            
+
             quietModeSwitch.addEventListener('change', () => {
-                fetch("{{ url_for('toggle_quiet_mode_web') }}", { method: 'POST' });
+                fetch("{{ url_for('toggle_quiet_mode_web') }}", { method: 'POST' })
+                    .then(response => {
+                        if (!response.ok) {
+                            if (response.status === 401 || response.status === 302) {
+                                window.location.href = "{{ url_for('login') }}";
+                            }
+                        }
+                    });
             });
 
             manualPlayBtn.addEventListener('click', () => {
                 const formData = new FormData();
                 formData.append('song', manualSongSelect.value);
                 fetch("{{ url_for('play_sound_web') }}", { method: 'POST', body: formData })
-                    .then(res => res.json()).then(data => showFlashMessage(data.message, data.status));
+                    .then(response => {
+                        if (!response.ok) {
+                            if (response.status === 401 || response.status === 302) {
+                                window.location.href = "{{ url_for('login') }}";
+                            }
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data) showFlashMessage(data.message, data.status);
+                    });
             });
 
             manualStopBtn.addEventListener('click', () => {
                 fetch("{{ url_for('stop_sound_web') }}", { method: 'POST' })
-                    .then(res => res.json()).then(data => showFlashMessage(data.message, data.status));
+                    .then(response => {
+                        if (!response.ok) {
+                            if (response.status === 401 || response.status === 302) {
+                                window.location.href = "{{ url_for('login') }}";
+                            }
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data) showFlashMessage(data.message, data.status);
+                    });
             });
-            
+
             // --- Status Polling ---
             function updateStatus() {
-                fetch("{{ url_for('status') }}").then(res => res.json()).then(data => {
-                    toggleServiceBtn.textContent = data.service_running ? 'СТОП на услугата' : 'СТАРТ на услугата';
-                    toggleServiceBtn.className = `btn ${data.service_running ? 'btn-danger' : 'btn-success'}`;
-                    quietModeSwitch.checked = data.quiet_mode;
-                });
+                fetch("{{ url_for('status') }}")
+                    .then(response => {
+                        if (!response.ok) {
+                            if (response.status === 401 || response.status === 302) {
+                                window.location.href = "{{ url_for('login') }}";
+                            }
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data) {
+                            toggleServiceBtn.textContent = data.service_running ? 'СТОП на услугата' : 'СТАРТ на услугата';
+                            toggleServiceBtn.className = `btn ${data.service_running ? 'btn-danger' : 'btn-success'}`;
+                            quietModeSwitch.checked = data.quiet_mode;
+                        }
+                    });
             }
             updateStatus();
             setInterval(updateStatus, 3000);
+
+            // --- Keep session alive ---
+            setInterval(function() {
+                fetch("{{ url_for('keep_alive') }}")
+                    .then(response => {
+                        if (!response.ok) {
+                            if (response.status === 401 || response.status === 302) {
+                                window.location.href = "{{ url_for('login') }}";
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Session keep-alive failed:', error);
+                        // Optionally redirect to login if keep-alive fails repeatedly
+                    });
+            }, 60000); // Every minute
 
             // --- Edit Modal Logic ---
             editEntryModal.addEventListener('show.bs.modal', function (event) {
