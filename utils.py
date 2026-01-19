@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 from tkinter import END
 from config import SCHEDULE_FILE
+import shared_state
 
 
 def load_schedule():
@@ -42,14 +43,20 @@ def save_schedule(schedule_data):
 
 
 def log_message(app, msg):
-    """Log a message to the application's log box."""
-    if app is None:
-        print(f"[LOG] {msg}")
-        return
-
+    """Log a message to the application's log box and the shared queue."""
     now = datetime.now().strftime("%H:%M:%S")
-    app.log_box.config(state="normal")
-    app.log_box.insert(END, f"[{now}] ", 'timestamp')
-    app.log_box.insert(END, f"{msg}\n", 'message')
-    app.log_box.config(state="disabled")
-    app.log_box.see(END)
+    log_entry = f"[{now}] {msg}"
+    
+    # Put the message in the queue for the web panel
+    shared_state.log_queue.put(log_entry)
+
+    # If the GUI app is running, also log to its text box
+    if app and hasattr(app, 'log_box'):
+        app.log_box.config(state="normal")
+        app.log_box.insert(END, f"[{now}] ", 'timestamp')
+        app.log_box.insert(END, f"{msg}\n", 'message')
+        app.log_box.config(state="disabled")
+        app.log_box.see(END)
+    else:
+        # Fallback for non-GUI logging
+        print(log_entry)

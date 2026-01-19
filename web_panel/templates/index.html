@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>School Bell - Уеб Контролен Панел</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        body { background-color: #f8f9fa; }
+        .container { max-width: 1140px; }
+        .card { margin-bottom: 1.5rem; }
+        #log-output {
+            background-color: #212529;
+            color: #e9ecef;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.85rem;
+            height: 400px;
+            overflow-y: scroll;
+            padding: 1rem;
+            border-radius: 0.25rem;
+        }
+        .table-actions .btn {
+            margin-right: 5px;
+        }
+        .form-check-label { cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="container py-4">
+        <h1 class="mb-4 text-center">Училищен Звънец - Уеб Контролен Панел</h1>
+        
+        <div id="flash-container"></div>
+
+        <!-- Main Controls -->
+        <div class="card">
+            <div class="card-header">Главно управление</div>
+            <div class="card-body">
+                <div class="d-flex flex-wrap align-items-center justify-content-between">
+                    <!-- Left side controls -->
+                    <div class="d-flex flex-wrap gap-3 align-items-center">
+                        <button id="toggle-service-btn" class="btn btn-primary">Зареждане...</button>
+                        <button class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#logModal">
+                            <i class="bi bi-body-text"></i> Системен лог
+                        </button>
+                    </div>
+                    <!-- Right side manual bell -->
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="quiet-mode-switch">
+                            <label class="form-check-label" for="quiet-mode-switch">Тих режим</label>
+                        </div>
+                        <label class="form-label mb-0 ms-2">Ръчен звънец:</label>
+                        <select id="manual-song-select" class="form-select" style="width: auto;">
+                            {% for song in songs %}
+                                <option value="{{ song }}">{{ song }}</option>
+                            {% endfor %}
+                        </select>
+                        <button id="manual-play-btn" class="btn btn-info"><i class="bi bi-play-circle"></i> Пусни</button>
+                        <button id="manual-stop-btn" class="btn btn-danger"><i class="bi bi-stop-circle"></i> Спри</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Schedule Management -->
+        <div class="card">
+            <div class="card-header">
+                Управление на програмата
+            </div>
+            <div class="card-body">
+                <ul class="nav nav-tabs" id="scheduleManagmentTab" role="tablist">
+                    <li class="nav-item" role="presentation"><button class="nav-link active" id="schedule-tab" data-bs-toggle="tab" data-bs-target="#schedule-tab-pane" type="button" role="tab">Преглед на програма</button></li>
+                    <li class="nav-item" role="presentation"><button class="nav-link" id="add-tab" data-bs-toggle="tab" data-bs-target="#add-tab-pane" type="button" role="tab">Добавяне на запис</button></li>
+                </ul>
+                <div class="tab-content" id="scheduleManagmentTabContent">
+                    <div class="tab-pane fade show active" id="schedule-tab-pane" role="tabpanel" tabindex="0">
+                        <div class="d-flex justify-content-end pt-3"><div class="col-md-3"><select id="day-filter" class="form-select"><option value="Всички">Всички дни</option>{% for day in days_of_week %}<option value="{{ day }}">{{ day }}</option>{% endfor %}</select></div></div>
+                        <div class="table-responsive pt-2">
+                            <table class="table table-striped table-hover">
+                                <thead><tr><th>Ден</th><th>Час</th><th>Песен</th><th class="text-end">Действия</th></tr></thead>
+                                <tbody id="schedule-table-body">
+                                    {% if schedule %}{% for entry in schedule %}<tr data-day="{{ entry.day }}">
+                                            <td>{{ entry.day }}</td><td>{{ entry.time }}</td><td>{{ entry.song if entry.song else 'Случайна' }}</td>
+                                            <td class="text-end table-actions">
+                                                <button type="button" class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#editEntryModal" data-original-day="{{ entry.day }}" data-original-time="{{ entry.time }}" data-song="{{ entry.song if entry.song else 'Случайна' }}"><i class="bi bi-pencil-square"></i> Редактирай</button>
+                                                <form action="{{ url_for('delete_entry') }}" method="post" class="d-inline"><input type="hidden" name="day" value="{{ entry.day }}"><input type="hidden" name="time" value="{{ entry.time }}"><button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-trash"></i> Изтрий</button></form>
+                                            </td></tr>{% endfor %}{% else %}<tr><td colspan="4" class="text-center">Няма записи в програмата.</td></tr>{% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="add-tab-pane" role="tabpanel" tabindex="0"><div class="p-3"><form action="{{ url_for('add_entry') }}" method="post" class="row g-3 align-items-end"><div class="col-md-4"><label for="day" class="form-label">Ден</label><select name="day" id="day" class="form-select" required>{% for day in days_of_week %}<option value="{{ day }}">{{ day }}</option>{% endfor %}</select></div><div class="col-md-3"><label for="time" class="form-label">Час</label><input type="time" name="time" id="time" class="form-control" required></div><div class="col-md-3"><label for="song" class="form-label">Песен</label><select name="song" id="song" class="form-select" required><option value="Случайна">Случайна</option>{% for song in songs %}<option value="{{ song }}">{{ song }}</option>{% endfor %}</select></div><div class="col-md-2"><button type="submit" class="btn btn-success w-100">Добави</button></div></form></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div class="modal fade" id="logModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Системен лог</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><pre id="log-output">Свързване...</pre></div></div></div></div>
+    <div class="modal fade" id="editEntryModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><form id="edit-form" action="{{ url_for('edit_entry') }}" method="post"><div class="modal-header"><h5 class="modal-title">Редактиране на запис</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><input type="hidden" id="edit-original-day" name="original_day"><input type="hidden" id="edit-original-time" name="original_time"><div class="mb-3"><label for="edit-day" class="form-label">Ден</label><select name="day" id="edit-day" class="form-select" required>{% for day in days_of_week %}<option value="{{ day }}">{{ day }}</option>{% endfor %}</select></div><div class="mb-3"><label for="edit-time" class="form-label">Час</label><input type="time" name="time" id="edit-time" class="form-control" required></div><div class="mb-3"><label for="edit-song" class="form-label">Песен</label><select name="song" id="edit-song" class="form-select" required><option value="Случайна">Случайна</option>{% for song in songs %}<option value="{{ song }}">{{ song }}</option>{% endfor %}</select></div></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отказ</button><button type="submit" class="btn btn-primary">Запази</button></div></form></div></div></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // --- Elements ---
+            const logOutput = document.getElementById('log-output');
+            const toggleServiceBtn = document.getElementById('toggle-service-btn');
+            const manualPlayBtn = document.getElementById('manual-play-btn');
+            const manualStopBtn = document.getElementById('manual-stop-btn');
+            const manualSongSelect = document.getElementById('manual-song-select');
+            const quietModeSwitch = document.getElementById('quiet-mode-switch');
+            const editEntryModal = document.getElementById('editEntryModal');
+            const dayFilter = document.getElementById('day-filter');
+            const scheduleTableBody = document.getElementById('schedule-table-body');
+            const flashContainer = document.getElementById('flash-container');
+
+            // --- Flash Messages ---
+            function showFlashMessage(message, category = 'info') {
+                const alertType = category === 'success' ? 'success' : (category === 'error' ? 'danger' : 'info');
+                const wrapper = document.createElement('div');
+                wrapper.innerHTML = [
+                    `<div class="alert alert-${alertType} alert-dismissible" role="alert">`,
+                    `   <div>${message}</div>`,
+                    '   <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>',
+                    '</div>'
+                ].join('');
+                flashContainer.append(wrapper);
+                setTimeout(() => wrapper.remove(), 5000);
+            }
+
+            // --- SSE for Live Logs ---
+            const eventSource = new EventSource("{{ url_for('stream_logs') }}");
+            eventSource.onopen = () => logOutput.textContent = '';
+            eventSource.onmessage = (event) => {
+                logOutput.textContent += event.data + '\n';
+                logOutput.scrollTop = logOutput.scrollHeight;
+            };
+            eventSource.onerror = () => logOutput.textContent += 'Връзката със сървъра за лог съобщения прекъсна.\n';
+
+            // --- Main Controls ---
+            toggleServiceBtn.addEventListener('click', () => {
+                fetch("{{ url_for('toggle_service_web') }}", { method: 'POST' }).then(updateStatus);
+            });
+            
+            quietModeSwitch.addEventListener('change', () => {
+                fetch("{{ url_for('toggle_quiet_mode_web') }}", { method: 'POST' });
+            });
+
+            manualPlayBtn.addEventListener('click', () => {
+                const formData = new FormData();
+                formData.append('song', manualSongSelect.value);
+                fetch("{{ url_for('play_sound_web') }}", { method: 'POST', body: formData })
+                    .then(res => res.json()).then(data => showFlashMessage(data.message, data.status));
+            });
+
+            manualStopBtn.addEventListener('click', () => {
+                fetch("{{ url_for('stop_sound_web') }}", { method: 'POST' })
+                    .then(res => res.json()).then(data => showFlashMessage(data.message, data.status));
+            });
+            
+            // --- Status Polling ---
+            function updateStatus() {
+                fetch("{{ url_for('status') }}").then(res => res.json()).then(data => {
+                    toggleServiceBtn.textContent = data.service_running ? 'СТОП на услугата' : 'СТАРТ на услугата';
+                    toggleServiceBtn.className = `btn ${data.service_running ? 'btn-danger' : 'btn-success'}`;
+                    quietModeSwitch.checked = data.quiet_mode;
+                });
+            }
+            updateStatus();
+            setInterval(updateStatus, 3000);
+
+            // --- Edit Modal Logic ---
+            editEntryModal.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                this.querySelector('#edit-original-day').value = button.dataset.originalDay;
+                this.querySelector('#edit-original-time').value = button.dataset.originalTime;
+                this.querySelector('#edit-day').value = button.dataset.originalDay;
+                this.querySelector('#edit-time').value = button.dataset.originalTime;
+                this.querySelector('#edit-song').value = button.dataset.song;
+            });
+
+            // --- Day Filter Logic ---
+            dayFilter.addEventListener('change', function() {
+                const selectedDay = this.value;
+                scheduleTableBody.querySelectorAll('tr').forEach(row => {
+                    row.style.display = (selectedDay === 'Всички' || row.dataset.day === selectedDay) ? '' : 'none';
+                });
+            });
+        });
+    </script>
+</body>
+</html>

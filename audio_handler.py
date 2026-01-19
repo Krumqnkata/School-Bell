@@ -45,10 +45,6 @@ def play_song(app, song_name=None):
         mixer.music.load(local_path)
         mixer.music.play()
 
-        while mixer.music.get_busy() and app.service_running:
-            import time
-            time.sleep(0.5)
-
     except Exception as e:
         app.log_message(f"[ГРЕШКА] Проблем при пускане на песен: {e}")
     return "CANCEL_JOB"

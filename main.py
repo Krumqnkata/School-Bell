@@ -7,9 +7,11 @@ import threading
 import time
 from tkinter import *
 import os
+from flask import Flask, render_template, request, redirect, url_for, flash, Response, jsonify
+import shared_state
 from pygame import mixer
 from datetime import datetime
-from config import APP_NAME, WIDTH, HEIGHT, RESOURCES_DIR, SCHEDULE_FILE
+from config import APP_NAME, WIDTH, HEIGHT, RESOURCES_DIR, SCHEDULE_FILE, DAYS_OF_WEEK
 from utils import load_schedule, save_schedule, log_message
 from ui_components import setup_left_panel, setup_center_panel, setup_right_panel
 from audio_handler import set_volume, play_song, play_song_manual
@@ -57,6 +59,18 @@ class SchoolBellApp(customtkinter.CTk):
         log_message(self, "Приложението е готово. Натиснете 'СТАРТ'.")
 
         self.start_ui_update_loops()
+        self.start_web_panel()
+
+    def start_web_panel(self):
+        """Starts the Flask web panel in a separate thread."""
+        def run_flask():
+            # Running with debug=False and use_reloader=False is crucial for threaded apps
+            flask_app.run(port=1927, host='0.0.0.0', debug=False, use_reloader=False)
+
+        flask_thread = threading.Thread(target=run_flask)
+        flask_thread.daemon = True  # Allows main app to exit even if this thread is running
+        flask_thread.start()
+        self.log_message("Уеб панелът е стартиран на http://127.0.0.1:1927")
 
     def start_ui_update_loops(self):
         # Update digital clock
@@ -184,3 +198,201 @@ class SchoolBellApp(customtkinter.CTk):
         if self.songs_window:
             self.songs_window.destroy()
         self.destroy()
+
+# --- Web Panel ---
+flask_app = Flask(__name__, template_folder='web_panel/templates')
+flask_app.secret_key = 'supersecretkey_for_schoolbell'
+
+def get_song_list():
+    """Returns a list of available songs."""
+    try:
+        return [s for s in os.listdir(RESOURCES_DIR) if s.endswith((".mp3", ".wav", ".ogg"))]
+    except FileNotFoundError:
+        return []
+
+@flask_app.route('/')
+def index():
+    """Main page, displays the schedule."""
+    schedule = load_schedule()
+    schedule.sort(key=lambda x: (DAYS_OF_WEEK.index(x['day']), x['time']))
+    songs = get_song_list()
+    return render_template('index.html', schedule=schedule, days_of_week=DAYS_OF_WEEK, songs=songs)
+
+@flask_app.route('/add', methods=['POST'])
+def add_entry():
+    """Adds a new entry to the schedule."""
+    day = request.form.get('day')
+    time = request.form.get('time')
+    song = request.form.get('song')
+
+    if not day or not time or not song:
+        flash('Моля, попълнете всички полета.', 'error')
+        return redirect(url_for('index'))
+
+    try:
+        hour, minute = map(int, time.split(':'))
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError("Invalid time range")
+    except ValueError:
+        flash('Невалиден формат за час. Моля, използвайте HH:MM.', 'error')
+        return redirect(url_for('index'))
+
+    schedule = load_schedule()
+    if any(entry['day'] == day and entry['time'] == time for entry in schedule):
+        flash('Такъв запис вече съществува.', 'warning')
+        return redirect(url_for('index'))
+
+    schedule.append({'day': day, 'time': time, 'song': song if song != "Случайна" else None})
+    save_schedule(schedule)
+    flash('Записът е добавен успешно.', 'success')
+    return redirect(url_for('index'))
+
+@flask_app.route('/delete', methods=['POST'])
+def delete_entry():
+    """Deletes an entry from the schedule."""
+    day_to_delete = request.form.get('day')
+    time_to_delete = request.form.get('time')
+
+    if not day_to_delete or not time_to_delete:
+        flash('Липсва информация за изтриване на записа.', 'error')
+        return redirect(url_for('index'))
+
+    schedule = load_schedule()
+    entry_found = False
+    new_schedule = []
+    for entry in schedule:
+        if not (entry['day'] == day_to_delete and entry['time'] == time_to_delete and not entry_found):
+            new_schedule.append(entry)
+        else:
+            entry_found = True
+            
+    if entry_found:
+        save_schedule(new_schedule)
+        flash('Записът е изтрит успешно.', 'success')
+    else:
+        flash('Записът за изтриване не е намерен.', 'error')
+
+    return redirect(url_for('index'))
+
+
+@flask_app.route('/play', methods=['POST'])
+def play_sound_web():
+    """Plays a sound file via a web request, respecting quiet mode."""
+    # Check for quiet mode first
+    if shared_state.gui_app and shared_state.gui_app.quiet_mode.get():
+        message = "Не може да се пусне ръчен звънец, защото 'Тих режим' е активен."
+        log_message(shared_state.gui_app, f"[WEB] {message}")
+        return jsonify({'status': 'warning', 'message': message})
+
+    song_name = request.form.get('song')
+    if not song_name:
+        return jsonify({'status': 'error', 'message': 'Липсва име на песен.'}), 400
+
+    # Security: Ensure song_name is just a filename
+    if '..' in song_name or '/' in song_name or '\\' in song_name:
+        return jsonify({'status': 'error', 'message': 'Невалидно име на песен.'}), 400
+        
+    songs = get_song_list()
+    if song_name not in songs:
+        return jsonify({'status': 'error', 'message': f"Песента '{song_name}' не е намерена."}), 404
+
+    song_path = os.path.join(RESOURCES_DIR, song_name)
+    
+    try:
+        log_message(shared_state.gui_app, f"[WEB] Пускане на ръчен звънец: '{song_name}'...")
+        mixer.music.load(song_path)
+        mixer.music.play()
+        return jsonify({'status': 'success', 'message': f"Пускане на '{song_name}'..."})
+    except Exception as e:
+        log_message(shared_state.gui_app, f"[WEB-ERROR] Грешка при пускане на песен: {e}")
+        return jsonify({'status': 'error', 'message': f"Грешка при пускане на песента: {e}"}), 500
+
+@flask_app.route('/stop-sound', methods=['POST'])
+def stop_sound_web():
+    """Stops any currently playing music."""
+    try:
+        mixer.music.stop()
+        log_message(shared_state.gui_app, "[WEB] Музиката е спряна ръчно.")
+        return jsonify({'status': 'success', 'message': 'Музиката е спряна.'})
+    except Exception as e:
+        log_message(shared_state.gui_app, f"[WEB-ERROR] Грешка при спиране на музика: {e}")
+        return jsonify({'status': 'error', 'message': f"Грешка при спиране на музиката: {e}"}), 500
+
+@flask_app.route('/toggle-service', methods=['POST'])
+def toggle_service_web():
+    """Toggles the scheduler service from the web panel."""
+    if shared_state.gui_app:
+        shared_state.gui_app.toggle_service()
+        return jsonify({'status': 'success', 'service_running': shared_state.gui_app.service_running})
+    return jsonify({'status': 'error', 'message': 'GUI app not found'}), 500
+
+@flask_app.route('/toggle-quiet-mode', methods=['POST'])
+def toggle_quiet_mode_web():
+    """Toggles the quiet mode from the web panel."""
+    if shared_state.gui_app:
+        try:
+            current_state = shared_state.gui_app.quiet_mode.get()
+            new_state = not current_state
+            shared_state.gui_app.quiet_mode.set(new_state)
+            log_message(shared_state.gui_app, f"[WEB] Тих режим е {'активиран' if new_state else 'деактивиран'}.")
+            return jsonify({'status': 'success', 'quiet_mode': new_state})
+        except Exception as e:
+            log_message(shared_state.gui_app, f"[WEB-ERROR] Грешка при смяна на тих режим: {e}")
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+    return jsonify({'status': 'error', 'message': 'GUI app not found'}), 500
+
+@flask_app.route('/status')
+def status():
+    """Returns the current status of the service."""
+    if shared_state.gui_app:
+        return jsonify({
+            'service_running': shared_state.gui_app.service_running,
+            'quiet_mode': shared_state.gui_app.quiet_mode.get()
+        })
+    return jsonify({'service_running': False, 'quiet_mode': False})
+
+
+@flask_app.route('/stream-logs')
+def stream_logs():
+    """Streams log messages to the client using SSE."""
+    def generate():
+        while True:
+            # Wait for a message in the queue
+            log_entry = shared_state.log_queue.get()
+            # Format as a Server-Sent Event
+            yield f"data: {log_entry}\n\n"
+    return Response(generate(), mimetype='text/event-stream')
+
+@flask_app.route('/edit', methods=['POST'])
+def edit_entry():
+    """Edits an existing schedule entry."""
+    original_day = request.form.get('original_day')
+    original_time = request.form.get('original_time')
+    
+    new_day = request.form.get('day')
+    new_time = request.form.get('time')
+    new_song = request.form.get('song')
+
+    if not all([original_day, original_time, new_day, new_time, new_song]):
+        flash('Липсват данни за редакцията.', 'error')
+        return redirect(url_for('index'))
+
+    schedule = load_schedule()
+    entry_found = False
+    for entry in schedule:
+        if entry['day'] == original_day and entry['time'] == original_time:
+            entry['day'] = new_day
+            entry['time'] = new_time
+            entry['song'] = new_song if new_song != "Случайна" else None
+            entry_found = True
+            break
+            
+    if entry_found:
+        save_schedule(schedule)
+        flash('Записът е редактиран успешно.', 'success')
+    else:
+        flash('Оригиналният запис не беше намерен за редакция.', 'error')
+
+    return redirect(url_for('index'))
+
+    
