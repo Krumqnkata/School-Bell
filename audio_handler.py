@@ -17,7 +17,7 @@ def set_volume(volume):
 
 
 def play_song(app, song_name=None):
-    """Play a song for scheduled bells with a fallback to begin.mp3."""
+    """Play a song for scheduled bells with a fallback to default.mp3."""
     if app.quiet_mode.get():
         show_visual_bell_notification(app)
         return schedule.CancelJob
@@ -63,15 +63,15 @@ def play_song(app, song_name=None):
         # Attempt to play the determined first song
         if not attempt_play(intended_song_filename):
             # If the first attempt fails (e.g., file not found, corrupt), try the fallback
-            app.log_message(f"Първият опит за пускане на '{intended_song_filename}' се провали. Опитвам резервна песен 'begin.mp3'...")
-            if not attempt_play('begin.mp3', is_fallback=True):
-                 app.log_message(f"[CRITICAL] Неуспешно пускане и на резервната песен 'begin.mp3'.")
+            app.log_message(f"Първият опит за пускане на '{intended_song_filename}' се провали. Опитвам резервна песен 'default.mp3'...")
+            if not attempt_play('default.mp3', is_fallback=True):
+                 app.log_message(f"[CRITICAL] Неуспешно пускане и на резервната песен 'default.mp3'.")
 
     except Exception as e:
         app.log_message(f"[FATAL] Критична грешка в audio_handler: {e}")
         # As a last resort, try to play the fallback even if song selection fails
-        attempt_play('begin.mp3', is_fallback=True)
-        
+        attempt_play('default.mp3', is_fallback=True)
+
     return schedule.CancelJob
 
 
