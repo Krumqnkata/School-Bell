@@ -54,7 +54,7 @@ class SchoolBellApp(customtkinter.CTk):
         self.service_running = False
         self.scheduler_thread = None
         mixer.init()
-        mixer.music.set_volume(0.5) # Set default volume
+        mixer.music.set_volume(1.0)  # Set default volume to 100%
 
         self.bell_times = load_schedule()
         log_message(self, "Приложението е готово. Натиснете 'СТАРТ'.")
@@ -383,6 +383,32 @@ def stop_sound_web():
         log_message(shared_state.gui_app, f"[WEB-ERROR] Грешка при спиране на музика: {e}")
         return jsonify({'status': 'error', 'message': f"Грешка при спиране на музиката: {e}"}), 500
 
+@flask_app.route('/set-volume', methods=['POST'])
+@login_required
+def set_volume_web():
+    """Sets the volume from the web panel."""
+    volume = request.form.get('volume')
+    if volume is None:
+        return jsonify({'status': 'error', 'message': 'Missing volume parameter'}), 400
+
+    try:
+        volume_float = float(volume)
+        if not (0.0 <= volume_float <= 1.0):
+            raise ValueError("Volume must be between 0.0 and 1.0")
+
+        if shared_state.gui_app:
+            # Use after() to ensure thread safety with tkinter
+            shared_state.gui_app.after(0, shared_state.gui_app.set_volume, volume_float)
+            # Also update the GUI slider directly to keep it synchronized
+            shared_state.gui_app.after(0, shared_state.gui_app.volume_slider.set, volume_float)
+            log_message(shared_state.gui_app, f"[WEB] Силата на звука е настроена на {int(volume_float * 100)}%")
+            return jsonify({'status': 'success', 'message': f'Volume set to {volume_float}'})
+        else:
+            return jsonify({'status': 'error', 'message': 'GUI app not found'}), 500
+
+    except (ValueError, TypeError):
+        return jsonify({'status': 'error', 'message': 'Invalid volume format'}), 400
+
 @flask_app.route('/toggle-service', methods=['POST'])
 @login_required
 def toggle_service_web():
@@ -415,9 +441,10 @@ def status():
     if shared_state.gui_app:
         return jsonify({
             'service_running': shared_state.gui_app.service_running,
-            'quiet_mode': shared_state.gui_app.quiet_mode.get()
+            'quiet_mode': shared_state.gui_app.quiet_mode.get(),
+            'volume': mixer.music.get_volume()
         })
-    return jsonify({'service_running': False, 'quiet_mode': False})
+    return jsonify({'service_running': False, 'quiet_mode': False, 'volume': 1.0})
 
 @flask_app.route('/keep-alive')
 @login_required

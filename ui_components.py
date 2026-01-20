@@ -32,10 +32,10 @@ def setup_left_panel(app):
     volume_control_frame.grid_columnconfigure(0, weight=1)
     
     app.volume_slider = customtkinter.CTkSlider(volume_control_frame, from_=0, to=1, command=app.set_volume)
-    app.volume_slider.set(0.5)
+    app.volume_slider.set(1.0)  # Set default volume to 100%
     app.volume_slider.grid(row=0, column=0, sticky="ew", padx=(0, 5))
     
-    app.volume_percentage_label = customtkinter.CTkLabel(volume_control_frame, text="50%", width=40)
+    app.volume_percentage_label = customtkinter.CTkLabel(volume_control_frame, text="100%", width=40)
     app.volume_percentage_label.grid(row=0, column=1, sticky="w")
 
     app.quiet_mode_checkbox = customtkinter.CTkCheckBox(app.left_panel, text="Тих режим", variable=app.quiet_mode)
