@@ -1,3 +1,5 @@
 customtkinter
 pygame
 Flask
+pystray
+pillow

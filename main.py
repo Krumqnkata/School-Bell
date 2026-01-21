@@ -20,6 +20,7 @@ from scheduler import start_service, stop_service, run_scheduler, update_next_be
 from manual_handler import manual_ring
 from schedule_editor import ScheduleEditorWindow
 from about_dialog import AboutDialog
+from tray_icon import TrayIcon
 
 
 class SchoolBellApp(customtkinter.CTk):
@@ -29,12 +30,15 @@ class SchoolBellApp(customtkinter.CTk):
         self.geometry(f"{WIDTH}x{HEIGHT}")
         self.resizable(True, True)
         customtkinter.set_appearance_mode("dark")
+
+
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.editor_window = None
         self.songs_window = None
         self.last_csv_mod_time = 0
         self.quiet_mode = customtkinter.BooleanVar()
         self.manual_ring_playing_thread = None # New attribute to track manual play thread
+        self.background_mode = False  # Flag to track if app is in background mode
 
         if not os.path.exists(RESOURCES_DIR):
             os.makedirs(RESOURCES_DIR)
@@ -58,6 +62,10 @@ class SchoolBellApp(customtkinter.CTk):
 
         self.bell_times = load_schedule()
         log_message(self, "Приложението е готово. Натиснете 'СТАРТ'.")
+
+        # Initialize system tray icon
+        self.tray_icon = TrayIcon(self)
+        self.tray_icon.start_tray_icon()
 
         self.start_ui_update_loops()
         self.start_web_panel()
@@ -192,13 +200,82 @@ class SchoolBellApp(customtkinter.CTk):
         return play_song(self, song_name)
 
     def on_closing(self):
-        if self.service_running:
-            self.stop_service()
-        if self.editor_window:
-            self.editor_window.destroy()
-        if self.songs_window:
-            self.songs_window.destroy()
+        """Handle the closing of the application with a confirmation dialog."""
+        # Show a confirmation dialog
+        response = self.ask_background_or_exit()
+        if response == "background":
+            # Hide to system tray
+            self.withdraw()  # Hide the window
+            self.background_mode = True
+        elif response == "exit":
+            # Exit the application completely
+            if self.service_running:
+                self.stop_service()
+            if self.editor_window:
+                self.editor_window.destroy()
+            if self.songs_window:
+                self.songs_window.destroy()
+            # Stop the tray icon
+            if hasattr(self, 'tray_icon') and self.tray_icon.icon:
+                self.tray_icon.icon.stop()
+            self.destroy()
+
+    def ask_background_or_exit(self):
+        """Show a dialog asking whether to run in background or exit."""
+        # Create a temporary dialog window
+        dialog = BackgroundDialog(self)
+        self.wait_window(dialog)
+        return dialog.result
+
+# Background Dialog Class
+class BackgroundDialog(customtkinter.CTkToplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Потвърждение")
+        self.geometry("400x150")
+        self.resizable(False, False)
+
+        # Center the dialog
+        self.transient(parent)
+        self.grab_set()
+
+        # Result variable
+        self.result = None
+
+        # Create widgets
+        label = customtkinter.CTkLabel(self, text="Искате ли приложението да продължи\nработа на заден план?",
+                                      font=customtkinter.CTkFont(size=14))
+        label.pack(pady=20, padx=20)
+
+        button_frame = customtkinter.CTkFrame(self, fg_color="transparent")
+        button_frame.pack(pady=10)
+
+        background_btn = customtkinter.CTkButton(button_frame, text="Заден план",
+                                               command=self.background_action,
+                                               fg_color="#2CC985",
+                                               hover_color="#25A96F")
+        background_btn.pack(side="left", padx=10)
+
+        exit_btn = customtkinter.CTkButton(button_frame, text="Изход",
+                                          command=self.exit_action,
+                                          fg_color="#E84545",
+                                          hover_color="#C53636")
+        exit_btn.pack(side="left", padx=10)
+
+        # Center the window
+        self.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() // 2) - (self.winfo_width() // 2)
+        y = parent.winfo_y() + (parent.winfo_height() // 2) - (self.winfo_height() // 2)
+        self.geometry(f"+{x}+{y}")
+
+    def background_action(self):
+        self.result = "background"
         self.destroy()
+
+    def exit_action(self):
+        self.result = "exit"
+        self.destroy()
+
 
 # --- Web Panel ---
 flask_app = Flask(__name__, template_folder='web_panel/templates', static_folder='web_panel/static')
