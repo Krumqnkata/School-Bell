@@ -3,20 +3,27 @@ Schedule editor window for the School Bell application.
 """
 import customtkinter
 import os
-from config import DAYS_OF_WEEK, BG_WEEKDAYS
-from utils import save_schedule
+from config import DAYS_OF_WEEK, BG_WEEKDAYS, NORMAL_SCHEDULE_FILE, ALTERNATIVE_SCHEDULE_FILE
+from utils import save_schedule, _read_schedule_file, save_specific_schedule
 import csv
 
 
 class ScheduleEditorWindow(customtkinter.CTkToplevel):
-    def __init__(self, parent_app):
+    def __init__(self, parent_app, schedule_type="normal"):
         super().__init__(parent_app)
         self.parent_app = parent_app
-        self.title("Редактор на програмата")
+        self.schedule_type = schedule_type
+        self.title(f"Редактор на програмата ({'Нормален' if schedule_type == 'normal' else 'Алтернативен'})")
         self.geometry("700x600")
         self.resizable(True, True)
         self.protocol("WM_DELETE_WINDOW", self.cancel)
         self.transient(parent_app)
+
+        # Determine which file to load based on schedule_type
+        if self.schedule_type == "normal":
+            self.schedule_filepath = NORMAL_SCHEDULE_FILE
+        else:
+            self.schedule_filepath = ALTERNATIVE_SCHEDULE_FILE
 
         # Configure grid weights for resizing - remove empty spaces
         self.grid_rowconfigure(0, weight=1)
@@ -56,8 +63,8 @@ class ScheduleEditorWindow(customtkinter.CTkToplevel):
         cancel_button = customtkinter.CTkButton(buttons_frame, text="Отказ", fg_color="#E84545", hover_color="#c53232", command=self.cancel)
         cancel_button.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
-        # Initialize temp_schedule with a copy of the parent's schedule
-        self.temp_schedule = [dict(entry) for entry in self.parent_app.bell_times]
+        # Initialize temp_schedule by loading from the determined file
+        self.temp_schedule = _read_schedule_file(self.schedule_filepath)
 
         # Populate the editor
         self.populate_editor()
@@ -323,7 +330,7 @@ class ScheduleEditorWindow(customtkinter.CTkToplevel):
         if not target_days:
             return
 
-        source_schedule = [entry for entry in self.parent_app.bell_times if entry['day'] == source_day]
+        source_schedule = [entry for entry in self.temp_schedule if entry['day'] == source_day]
 
         # Remove existing entries for target days from temp_schedule
         filtered_temp = [entry for entry in self.temp_schedule if entry['day'] not in target_days]
@@ -501,7 +508,7 @@ class ScheduleEditorWindow(customtkinter.CTkToplevel):
         if not target_days:
             return
 
-        source_schedule = [entry for entry in self.parent_app.bell_times if entry['day'] == source_day]
+        source_schedule = [entry for entry in self.temp_schedule if entry['day'] == source_day]
 
         # Remove existing entries for target days from temp_schedule
         filtered_temp = [entry for entry in self.temp_schedule if entry['day'] not in target_days]
@@ -517,7 +524,8 @@ class ScheduleEditorWindow(customtkinter.CTkToplevel):
         self.populate_editor()
 
     def save_and_close(self):
-        self.parent_app.update_schedule(self.temp_schedule)
+        save_specific_schedule(self.schedule_filepath, self.temp_schedule)
+        self.parent_app.reload_schedule_from_csv() # Trigger reload in main app
         self.destroy()
 
     def cancel(self):

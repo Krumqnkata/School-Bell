@@ -1,0 +1,7 @@
+Понеделник=alternative
+Вторник=normal
+Сряда=alternative
+Четвъртък=normal
+Петък=alternative
+Събота=normal
+Неделя=alternative

@@ -11,7 +11,7 @@ def setup_left_panel(app):
     """Setup the left panel of the application."""
     app.left_panel = customtkinter.CTkFrame(app, fg_color="transparent")
     app.left_panel.grid(row=0, column=0, sticky="nswe", padx=20, pady=20)
-    app.left_panel.grid_rowconfigure(13, weight=1) # Adjusted for new buttons
+    app.left_panel.grid_rowconfigure(14, weight=1) # Adjusted for new buttons
 
     customtkinter.CTkLabel(app.left_panel, text="СТАТУС:", font=customtkinter.CTkFont(size=20, weight="bold")).grid(row=0, column=0, padx=20, pady=(10, 5), sticky="w")
     app.status_label = customtkinter.CTkLabel(app.left_panel, text="СПРЯН", text_color=RED, font=customtkinter.CTkFont(size=18, weight="bold"))
@@ -41,9 +41,13 @@ def setup_left_panel(app):
     app.quiet_mode_checkbox = customtkinter.CTkCheckBox(app.left_panel, text="Тих режим", variable=app.quiet_mode)
     app.quiet_mode_checkbox.grid(row=8, column=0, padx=20, pady=10, sticky="w")
 
+    # New button to open schedule config editor
+    app.open_schedule_config_button = customtkinter.CTkButton(app.left_panel, text="Настройки на графика", command=app.open_schedule_config_editor, width=180)
+    app.open_schedule_config_button.grid(row=9, column=0, padx=20, pady=(20, 10))
+
     # Frame for manual ring controls
     manual_ring_frame = customtkinter.CTkFrame(app.left_panel, fg_color="transparent")
-    manual_ring_frame.grid(row=9, column=0, padx=20, pady=10, sticky="ew")
+    manual_ring_frame.grid(row=10, column=0, padx=20, pady=10, sticky="ew")
     manual_ring_frame.grid_columnconfigure(0, weight=1)
     
     # Dropdown for selecting specific song
@@ -54,18 +58,25 @@ def setup_left_panel(app):
     app.manual_ring_button = customtkinter.CTkButton(manual_ring_frame, text="Пусни звънеца сега", command=app.manual_ring)
     app.manual_ring_button.grid(row=0, column=1, sticky="ew")
 
-    # Moved from setup_right_panel
-    app.edit_button = customtkinter.CTkButton(app.left_panel, text="Редактирай програмата", command=app.open_schedule_editor)
-    app.edit_button.grid(row=10, column=0, padx=20, pady=10, sticky="ew")
+    # Buttons for editing specific schedules
+    app.schedule_edit_buttons_frame = customtkinter.CTkFrame(app.left_panel, fg_color="transparent")
+    app.schedule_edit_buttons_frame.grid(row=11, column=0, padx=20, pady=10, sticky="ew")
+    app.schedule_edit_buttons_frame.grid_columnconfigure((0,1), weight=1)
 
-    app.start_stop_button = customtkinter.CTkButton(app.left_panel, text="СТАРТ", command=app.toggle_service)
-    app.start_stop_button.grid(row=11, column=0, padx=20, pady=20, sticky="sew")
+    app.open_normal_schedule_editor_button = customtkinter.CTkButton(app.schedule_edit_buttons_frame, text="Редактирай Нормален График", command=app.open_normal_schedule_editor, width=180)
+    app.open_normal_schedule_editor_button.grid(row=0, column=0, padx=(0,5))
+    
+    app.open_alternative_schedule_editor_button = customtkinter.CTkButton(app.schedule_edit_buttons_frame, text="Редактирай Алтернативен График", command=app.open_alternative_schedule_editor, width=180)
+    app.open_alternative_schedule_editor_button.grid(row=0, column=1, padx=(5,0))
+
+    app.start_stop_button = customtkinter.CTkButton(app.left_panel, text="СТАРТ", command=app.toggle_service, width=200)
+    app.start_stop_button.grid(row=12, column=0, padx=20, pady=20, sticky="s")
 
     disclaimer_label = customtkinter.CTkLabel(app.left_panel, text="Важно: При промяна/добавяне на песни, рестартирайте програмата.", font=customtkinter.CTkFont(size=11, slant="italic"), text_color="yellow", wraplength=250)
-    disclaimer_label.grid(row=12, column=0, padx=20, pady=(0, 10), sticky="s")
+    disclaimer_label.grid(row=13, column=0, padx=20, pady=(0, 10), sticky="s")
 
     app.about_button = customtkinter.CTkButton(app.left_panel, text="Относно", command=app.show_about, fg_color="transparent", hover_color="#555555", width=60)
-    app.about_button.grid(row=13, column=0, padx=20, pady=(0, 20), sticky="s")
+    app.about_button.grid(row=14, column=0, padx=20, pady=(0, 20), sticky="s")
 
 
 def setup_center_panel(app):

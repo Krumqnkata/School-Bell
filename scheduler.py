@@ -15,7 +15,9 @@ def start_service(app):
     log_message(app, "Услугата стартира...")
     app.status_label.configure(text="РАБОТИ", text_color="#2CC985")
     app.start_stop_button.configure(text="СТОП")
-    app.edit_button.configure(state="disabled")
+    app.open_schedule_config_button.configure(state="disabled")
+    app.open_normal_schedule_editor_button.configure(state="disabled")
+    app.open_alternative_schedule_editor_button.configure(state="disabled")
     app.scheduler_thread = threading.Thread(target=run_scheduler, args=(app,), daemon=True)
     app.scheduler_thread.start()
 
@@ -30,7 +32,9 @@ def stop_service(app):
     app.status_label.configure(text="СПРЯН", text_color="#E84545")
     app.start_stop_button.configure(text="СТАРТ")
     app.next_bell_label.configure(text="--:--:--")
-    app.edit_button.configure(state="normal")
+    app.open_schedule_config_button.configure(state="normal")
+    app.open_normal_schedule_editor_button.configure(state="normal")
+    app.open_alternative_schedule_editor_button.configure(state="normal")
     log_message(app, "Услугата е спряна.")
 
 

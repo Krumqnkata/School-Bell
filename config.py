@@ -7,7 +7,9 @@ APP_NAME = "Училищен Звънец v2.5/БЕТА/"
 WIDTH = 1100
 HEIGHT = 700
 RESOURCES_DIR = "songs"
-SCHEDULE_FILE = "schedule.csv"
+NORMAL_SCHEDULE_FILE = "schedule_normal.csv"
+ALTERNATIVE_SCHEDULE_FILE = "schedule_alternative.csv"
+SCHEDULE_CONFIG_FILE = "schedule_config.txt"
 
 # --- Colors ---
 GREEN = "#2CC985"

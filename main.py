@@ -12,8 +12,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import shared_state
 from pygame import mixer
 from datetime import datetime
-from config import APP_NAME, WIDTH, HEIGHT, RESOURCES_DIR, SCHEDULE_FILE, DAYS_OF_WEEK
-from utils import load_schedule, save_schedule, log_message
+from config import APP_NAME, WIDTH, HEIGHT, RESOURCES_DIR, DAYS_OF_WEEK, BG_WEEKDAYS, NORMAL_SCHEDULE_FILE, ALTERNATIVE_SCHEDULE_FILE, SCHEDULE_CONFIG_FILE
+from utils import load_schedule, save_schedule, log_message, load_schedule_config, save_schedule_config
 from ui_components import setup_left_panel, setup_center_panel, setup_right_panel
 from audio_handler import set_volume, play_song, play_song_manual
 from scheduler import start_service, stop_service, run_scheduler, update_next_bell_label
@@ -21,6 +21,7 @@ from manual_handler import manual_ring
 from schedule_editor import ScheduleEditorWindow
 from about_dialog import AboutDialog
 from tray_icon import TrayIcon
+from schedule_config_editor import ScheduleConfigEditorWindow
 
 
 class SchoolBellApp(customtkinter.CTk):
@@ -34,8 +35,11 @@ class SchoolBellApp(customtkinter.CTk):
 
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.editor_window = None
+        self.config_editor_window = None # New attribute for schedule config editor
         self.songs_window = None
         self.last_csv_mod_time = 0
+        self.last_alternative_csv_mod_time = 0 # New attribute
+        self.last_config_mod_time = 0 # New attribute to track schedule_config.txt mod time
         self.quiet_mode = customtkinter.BooleanVar()
         self.manual_ring_playing_thread = None # New attribute to track manual play thread
         self.background_mode = False  # Flag to track if app is in background mode
@@ -91,20 +95,43 @@ class SchoolBellApp(customtkinter.CTk):
 
         # Check for external CSV changes
         try:
-            mod_time = os.path.getmtime(SCHEDULE_FILE)
-            if self.last_csv_mod_time != 0 and mod_time != self.last_csv_mod_time:
-                log_message(self, "Открита е промяна в schedule.csv. Презареждане...")
+            # Check normal schedule file
+            mod_time_normal = os.path.getmtime(NORMAL_SCHEDULE_FILE)
+            if self.last_csv_mod_time != 0 and mod_time_normal != self.last_csv_mod_time:
+                log_message(self, f"Открита е промяна в {NORMAL_SCHEDULE_FILE}. Презареждане...")
                 self.reload_schedule_from_csv()
-            self.last_csv_mod_time = mod_time
+            self.last_csv_mod_time = mod_time_normal
         except FileNotFoundError:
             pass # Handled by load_schedule
+        
+        try:
+            # Check alternative schedule file
+            mod_time_alternative = os.path.getmtime(ALTERNATIVE_SCHEDULE_FILE)
+            # Use a separate last_mod_time for alternative schedule if you need to distinguish
+            # For simplicity, for now, we'll just trigger reload if it changes
+            if self.last_alternative_csv_mod_time != 0 and mod_time_alternative != self.last_alternative_csv_mod_time:
+                log_message(self, f"Открита е промяна в {ALTERNATIVE_SCHEDULE_FILE}. Презареждане...")
+                self.reload_schedule_from_csv()
+            self.last_alternative_csv_mod_time = mod_time_alternative # Initialize this in __init__
+        except FileNotFoundError:
+            pass # Handled by load_schedule
+
+        try:
+            # Check schedule config file
+            mod_time_config = os.path.getmtime(SCHEDULE_CONFIG_FILE)
+            if self.last_config_mod_time != 0 and mod_time_config != self.last_config_mod_time:
+                log_message(self, f"Открита е промяна в {SCHEDULE_CONFIG_FILE}. Презареждане...")
+                self.reload_schedule_from_csv() # Reload main schedule
+            self.last_config_mod_time = mod_time_config
+        except FileNotFoundError:
+            pass # Handled by load_schedule_config
 
         # Schedule next update
         self.after(1000, self.start_ui_update_loops)
 
     def reload_schedule_from_csv(self):
         self.bell_times = load_schedule()
-        log_message(self, "Програмата е презаредена от CSV файла.")
+        log_message(self, "Графикът е презареден.")
         if self.service_running:
             log_message(self, "Рестартиране на услугата с новата програма...")
             self.stop_service()
@@ -124,6 +151,9 @@ class SchoolBellApp(customtkinter.CTk):
         # Update the volume percentage label
         volume_percent = int(float(volume) * 100)
         self.volume_percentage_label.configure(text=f"{volume_percent}%")
+
+
+
 
     def manual_ring(self):
         manual_ring(self)
@@ -156,12 +186,28 @@ class SchoolBellApp(customtkinter.CTk):
                 song_display = entry.get('song') if entry.get('song') else "Случайна"
                 customtkinter.CTkLabel(self.schedule_display_frame, text=f"{entry['time']} ({song_display})", font=customtkinter.CTkFont(size=14)).pack(pady=5, padx=10, anchor="w")
 
-    def open_schedule_editor(self):
+    def _open_schedule_editor(self, schedule_type):
         if self.editor_window is None or not self.editor_window.winfo_exists():
-            self.editor_window = ScheduleEditorWindow(self)
+            self.editor_window = ScheduleEditorWindow(self, schedule_type=schedule_type)
             self.editor_window.grab_set()
         else:
             self.editor_window.focus()
+
+    def open_normal_schedule_editor(self):
+        """Open the schedule editor for the normal schedule."""
+        self._open_schedule_editor(schedule_type="normal")
+
+    def open_alternative_schedule_editor(self):
+        """Open the schedule editor for the alternative schedule."""
+        self._open_schedule_editor(schedule_type="alternative")
+
+    def open_schedule_config_editor(self):
+        """Open the schedule configuration editor window."""
+        if self.config_editor_window is None or not self.config_editor_window.winfo_exists():
+            self.config_editor_window = ScheduleConfigEditorWindow(self)
+            self.config_editor_window.grab_set()
+        else:
+            self.config_editor_window.focus()
 
     def show_about(self):
         AboutDialog(self)
@@ -213,6 +259,8 @@ class SchoolBellApp(customtkinter.CTk):
                 self.stop_service()
             if self.editor_window:
                 self.editor_window.destroy()
+            if self.config_editor_window: # Destroy config editor if open
+                self.config_editor_window.destroy()
             if self.songs_window:
                 self.songs_window.destroy()
             # Stop the tray icon
